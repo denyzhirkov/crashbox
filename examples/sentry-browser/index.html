@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Crashbox · @sentry/browser smoke test</title>
+  <style>
+    body {
+      font-family: ui-monospace, monospace;
+      background: #15141a;
+      color: #e9e6df;
+      max-width: 640px;
+      margin: 4rem auto;
+      padding: 0 1.5rem;
+    }
+    h1 { font-family: Georgia, serif; font-weight: 500; }
+    button {
+      background: #e3402d; color: #f7f5ef; border: 0;
+      padding: 0.5rem 1rem; cursor: pointer;
+      font-family: inherit; font-size: 14px;
+    }
+    button:hover { background: #b9352a; }
+    code { background: #1d1c23; padding: 0.1rem 0.3rem; }
+    .log { color: #8c8a82; font-size: 12px; white-space: pre-wrap; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>crashbox · @sentry/browser smoke test</h1>
+  <p>// edit <code>DSN</code> below to point at your Crashbox, then click the button.</p>
+
+  <button id="throw">throw → send</button>
+  <pre class="log" id="log"></pre>
+
+  <script type="module">
+    // Pin the @sentry/browser version known to ship the envelope-based transport.
+    import * as Sentry from 'https://esm.sh/@sentry/browser@8'
+
+    const DSN = 'http://dockerkey@localhost:18080/1' // ← edit me
+
+    Sentry.init({
+      dsn: DSN,
+      defaultIntegrations: false,
+      tracesSampleRate: 0,
+    })
+
+    const log = (m) => {
+      document.getElementById('log').textContent += m + '\n'
+    }
+
+    document.getElementById('throw').addEventListener('click', () => {
+      try {
+        // The kind of error a real app would produce.
+        const user = null
+        log('reading user.name…')
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        user.name
+      } catch (e) {
+        const id = Sentry.captureException(e)
+        log('captured: ' + id)
+        Sentry.flush(2000).then(() => log('flushed.'))
+      }
+    })
+  </script>
+</body>
+</html>

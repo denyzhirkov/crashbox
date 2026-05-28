@@ -1,0 +1,33 @@
+# Rust
+/backend/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Local data / secrets
+/data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Tooling
+.tsk/
+.kungfu/
+CLAUDE.md
+crashbox_master_prompt.md

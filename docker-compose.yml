@@ -1,0 +1,24 @@
+services:
+  crashbox:
+    # Pull from Docker Hub by default; uncomment `build:` to build locally instead.
+    image: denyzhirkov/crashbox:1.0.0
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: crashbox
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - crashbox-data:/data
+    environment:
+      CRASHBOX_PUBLIC_URL: "http://localhost:8080"
+      CRASHBOX_ADMIN_EMAIL: "${CRASHBOX_ADMIN_EMAIL:-admin@example.com}"
+      CRASHBOX_ADMIN_PASSWORD: "${CRASHBOX_ADMIN_PASSWORD:-change-me-on-first-boot}"
+      CRASHBOX_PROJECT_NAME: "${CRASHBOX_PROJECT_NAME:-my-app}"
+      CRASHBOX_PROJECT_PLATFORM: "${CRASHBOX_PROJECT_PLATFORM:-javascript}"
+    # Healthchecks intentionally omitted: the distroless runtime has no shell or curl. If you
+    # need orchestrator-level probes, run a sidecar or use k8s's HTTP probe on /healthz.
+
+volumes:
+  crashbox-data:

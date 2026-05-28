@@ -1,0 +1,11 @@
+{
+  "name": "crashbox-sentry-node-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "send": "node send.js"
+  },
+  "dependencies": {
+    "@sentry/node": "^8"
+  }
+}

@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+@import "@fontsource/newsreader/400.css";
+@import "@fontsource/newsreader/500.css";
+
+@theme {
+  --color-ink-50:  #f7f5ef;
+  --color-ink-100: #e9e6df;
+  --color-ink-200: #c9c5b9;
+  --color-ink-300: #8c8a82;
+  --color-ink-400: #5a5854;
+  --color-ink-500: #353438;
+  --color-ink-600: #26252d;
+  --color-ink-700: #1d1c23;
+  --color-ink-800: #15141a;
+  --color-ink-900: #0e0d12;
+
+  --color-crash: #e3402d;
+  --color-crash-dim: #b9352a;
+
+  --color-warn: #f0b400;
+  --color-info: #6c7ae0;
+
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-serif: "Newsreader", ui-serif, Georgia, serif;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--color-ink-800);
+  color: var(--color-ink-100);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: var(--color-crash);
+  color: var(--color-ink-50);
+}
+
+/* Hide scrollbars on idle but allow scrolling. */
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-thumb { background: var(--color-ink-600); border-radius: 3px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--color-ink-500); }
+
+/* Subtle focus that respects the brand. */
+:focus-visible {
+  outline: 2px solid var(--color-crash);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+

@@ -1,0 +1,175 @@
+use axum::body::Bytes;
+use axum::extract::{Path, Query, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::IntoResponse;
+use axum::Json;
+use chrono::Utc;
+use serde::Deserialize;
+use serde_json::{json, Value};
+
+use crate::app_state::AppState;
+use crate::db::{events, issues, projects};
+use crate::sentry::{auth, envelope, grouping, normalize};
+
+#[derive(Debug, Deserialize)]
+pub struct IngestQuery {
+    #[serde(default)]
+    pub sentry_key: Option<String>,
+    #[serde(default)]
+    pub sentry_version: Option<String>,
+    #[serde(default)]
+    pub sentry_client: Option<String>,
+}
+
+/// POST /api/:project_id/envelope[/]
+pub async fn envelope_endpoint(
+    State(state): State<AppState>,
+    Path(project_id): Path<i64>,
+    Query(q): Query<IngestQuery>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    let limit = state.config.ingest.max_envelope_bytes;
+    if body.len() > limit {
+        return refuse(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "envelope exceeds CRASHBOX_MAX_ENVELOPE_BYTES",
+        );
+    }
+
+    let auth_header = headers.get("x-sentry-auth").and_then(|v| v.to_str().ok());
+    let raw_query_key = q.sentry_key.as_deref();
+    let key = auth::extract_sentry_key(auth_header, None)
+        .or_else(|| raw_query_key.map(str::to_string));
+    let Some(public_key) = key else {
+        return refuse(StatusCode::UNAUTHORIZED, "missing sentry_key");
+    };
+
+    let project = match projects::find_by_public_key(&state.db, &public_key).await {
+        Ok(Some(p)) => p,
+        Ok(None) => return refuse(StatusCode::UNAUTHORIZED, "unknown sentry_key"),
+        Err(e) => {
+            tracing::error!(error = %e, "db error looking up project");
+            return refuse(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+        }
+    };
+    if project.id != project_id {
+        return refuse(
+            StatusCode::UNAUTHORIZED,
+            "sentry_key does not match project_id in path",
+        );
+    }
+
+    let decision = state.rate_limiter.check(project.id);
+    if !decision.allowed {
+        let mut resp = (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"error": "rate limit exceeded"})),
+        )
+            .into_response();
+        if let Ok(v) = decision.retry_after.to_string().parse() {
+            resp.headers_mut().insert("retry-after", v);
+        }
+        return resp;
+    }
+
+    let env = match envelope::parse(&body) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::debug!(project_id = project.id, error = %e, "envelope parse failed");
+            return refuse(StatusCode::BAD_REQUEST, &format!("invalid envelope: {e}"));
+        }
+    };
+
+    let mut stored_event_id: Option<String> = None;
+    let max_event_bytes = state.config.ingest.max_event_bytes;
+
+    for item in &env.items {
+        if !item.is_event() {
+            tracing::debug!(
+                ty = item.header.ty.as_deref().unwrap_or("unknown"),
+                "skipping non-event item"
+            );
+            continue;
+        }
+        if item.payload.len() > max_event_bytes {
+            return refuse(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "event exceeds CRASHBOX_MAX_EVENT_BYTES",
+            );
+        }
+        let raw_str = match std::str::from_utf8(&item.payload) {
+            Ok(s) => s,
+            Err(_) => return refuse(StatusCode::BAD_REQUEST, "event payload is not valid UTF-8"),
+        };
+        let parsed: Value = match serde_json::from_str(raw_str) {
+            Ok(v) => v,
+            Err(_) => return refuse(StatusCode::BAD_REQUEST, "event payload is not valid JSON"),
+        };
+
+        let mut ev = normalize::from_value(&parsed);
+        // Envelope header may carry event_id when the event payload omits it.
+        if ev.event_id.is_none() {
+            ev.event_id = env.header.event_id.clone();
+        }
+
+        let fp = grouping::fingerprint(&ev);
+        let title = normalize::title_for(&ev);
+        let event_ts = ev.timestamp.clone().unwrap_or_else(|| Utc::now().to_rfc3339());
+
+        match store_event(&state, project.id, &ev, &fp, &title, &event_ts, raw_str).await {
+            Ok(_) => {
+                stored_event_id = ev.event_id.clone().or_else(|| Some(String::new()));
+                tracing::info!(
+                    project_id = project.id,
+                    event_id = ev.event_id.as_deref().unwrap_or("(none)"),
+                    fingerprint = %fp,
+                    "ingested event"
+                );
+                // MVP: process only the first event item per envelope.
+                break;
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "store_event failed");
+                return refuse(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+            }
+        }
+    }
+
+    let id_for_response = stored_event_id.unwrap_or_default();
+    (StatusCode::OK, Json(json!({ "id": id_for_response }))).into_response()
+}
+
+async fn store_event(
+    state: &AppState,
+    project_id: i64,
+    ev: &normalize::NormalizedEvent,
+    fingerprint: &str,
+    title: &str,
+    timestamp_iso: &str,
+    raw_json: &str,
+) -> anyhow::Result<()> {
+    // BEGIN IMMEDIATE serializes concurrent writers cleanly via busy_timeout. See
+    // `db::begin_write` for the full rationale — `pool.begin()` (= BEGIN DEFERRED) causes
+    // SQLITE_BUSY under bursts because two transactions both hold SHARED and race to upgrade.
+    let mut tx = crate::db::begin_write(&state.db).await?;
+    let issue_id = issues::upsert(
+        tx.acquire(),
+        project_id,
+        fingerprint,
+        title,
+        ev.level.as_deref(),
+        ev.platform.as_deref(),
+        timestamp_iso,
+    )
+    .await?;
+    let event_row_id =
+        events::insert_full(tx.acquire(), project_id, Some(issue_id), ev, raw_json).await?;
+    issues::bump_after_event(tx.acquire(), issue_id, event_row_id, timestamp_iso).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+fn refuse(status: StatusCode, msg: &str) -> axum::response::Response {
+    (status, Json(json!({"error": msg}))).into_response()
+}
