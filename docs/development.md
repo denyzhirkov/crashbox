@@ -145,6 +145,43 @@ examples/               sentry-node, sentry-browser
 Dockerfile docker-compose.yml .dockerignore
 ```
 
+## Releasing
+
+Releases are cut by GitHub Actions ([`.github/workflows/release.yml`](../.github/workflows/release.yml)),
+triggered by pushing a `v*` tag. The workflow builds the image **natively** on both
+`ubuntu-latest` (amd64) and `ubuntu-24.04-arm` (arm64), pushes each by digest, then stitches
+them into a single multi-arch manifest list on Docker Hub (`:X.Y.Z`, `:X.Y`, `:latest`) and
+opens a GitHub Release with auto-generated notes.
+
+> ⚠️ Always release via the tag/CI path. A local `docker build … && docker push` produces a
+> **single-arch** image for the host's architecture — that's how 1.1.0 shipped arm64-only and
+> broke `exec format error` on amd64 hosts.
+
+One-time setup — repo secrets (Settings → Secrets → Actions, or `gh secret set`):
+
+- `DOCKERHUB_USERNAME` — Docker Hub account (`denyzhirkov`)
+- `DOCKERHUB_TOKEN` — a Docker Hub **access token** (Account Settings → Security), not the password
+
+Cutting a release:
+
+```bash
+# 1. bump versions in the same commit
+#    backend/Cargo.toml, frontend/package.json, docker-compose.yml, README.md, docs/dockerhub.md
+cargo update -p crashbox --precise <new-version>   # refresh Cargo.lock
+# 2. commit, then tag + push
+git tag v1.2.0
+git push origin main --tags
+# 3. watch it
+gh run watch
+```
+
+Verify the published manifest is multi-arch:
+
+```bash
+docker buildx imagetools inspect denyzhirkov/crashbox:1.2.0
+# expect both linux/amd64 and linux/arm64 entries
+```
+
 ## Adding HTTP routes
 
 1. Add a handler in `backend/src/http/<module>.rs`.

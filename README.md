@@ -22,10 +22,10 @@ docker run -d \
   -e CRASHBOX_ADMIN_PASSWORD=change-me-on-first-boot \
   -e CRASHBOX_PROJECT_NAME=my-app \
   -e CRASHBOX_PUBLIC_URL=http://localhost:8080 \
-  denyzhirkov/crashbox:1.1.0
+  denyzhirkov/crashbox:1.2.0
 ```
 
-Image: [`denyzhirkov/crashbox`](https://hub.docker.com/r/denyzhirkov/crashbox) on Docker Hub (~40 MB, distroless, non-root). Pin to a specific tag (`:1.1.0`) in production; `:latest` follows the most recent release.
+Image: [`denyzhirkov/crashbox`](https://hub.docker.com/r/denyzhirkov/crashbox) on Docker Hub (~40 MB, distroless, non-root, multi-arch `linux/amd64` + `linux/arm64`). Pin to a specific tag (`:1.2.0`) in production; `:latest` follows the most recent release.
 
 Watch the logs for the bootstrap line — it prints the DSN exactly once:
 
@@ -107,6 +107,8 @@ In both cases, the event should appear in the UI within a second.
 ---
 
 ## Status
+
+**1.2.0** — multi-arch release: the Docker image now ships as a manifest list covering `linux/amd64` and `linux/arm64` (1.1.0 was arm64-only and failed with `exec format error` on amd64 hosts). Releases are now built and published by GitHub Actions on tag push. No application changes.
 
 **1.1.0** — feature release: webhooks (Telegram/Discord/generic) with spike detection, auto-resolve & snooze, 24h sparklines per issue, Cmd+K command palette, tag click-to-filter + saved views, admin CLI (`crashbox projects list`, etc.), Prometheus `/metrics`. Single-tenant, single-user, single binary. Published to Docker Hub as [`denyzhirkov/crashbox`](https://hub.docker.com/r/denyzhirkov/crashbox). Use at your own risk on something small first.
 

@@ -21,7 +21,7 @@ docker run -d --name crashbox \
   -e CRASHBOX_ADMIN_PASSWORD=change-me \
   -e CRASHBOX_PROJECT_NAME=my-app \
   -e CRASHBOX_PUBLIC_URL=http://localhost:8080 \
-  denyzhirkov/crashbox:1.1.0
+  denyzhirkov/crashbox:1.2.0
 ```
 
 Watch the logs once for the DSN:
@@ -44,7 +44,7 @@ Open `http://localhost:8080`, log in, your crashes are there.
 
 | Tag | What |
 |---|---|
-| `denyzhirkov/crashbox:1.1.0` | Pinned 1.1.0 — **recommended** in production |
+| `denyzhirkov/crashbox:1.2.0` | Pinned 1.2.0 — **recommended** in production |
 | `denyzhirkov/crashbox:latest` | Floats to the newest release |
 
 ---
@@ -96,7 +96,7 @@ Full reference: [`docs/configuration.md`](https://github.com/denyzhirkov/crashbo
 # minimal compose
 services:
   crashbox:
-    image: denyzhirkov/crashbox:1.1.0
+    image: denyzhirkov/crashbox:1.2.0
     restart: unless-stopped
     ports: ["8080:8080"]
     volumes: [crashbox-data:/data]
@@ -118,7 +118,7 @@ volumes:
 - **Size**: ~40 MB
 - **User**: `nonroot:nonroot` (uid 65532)
 - **Entry**: `/usr/local/bin/crashbox` (same binary, `serve` is default; runs as CLI for other subcommands)
-- **Architectures**: linux/amd64 (multi-arch coming later)
+- **Architectures**: linux/amd64, linux/arm64 (multi-arch manifest list)
 
 ## License
 
