@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 use serde::Serialize;
 use sqlx::SqlitePool;
 
-use crate::db::issues::Issue;
+use crate::db::issues::{Issue, IssueWithSparkline};
 
 #[derive(Debug, sqlx::FromRow, Clone, serde::Serialize)]
 pub struct Project {
@@ -121,7 +121,7 @@ pub struct ProjectOverview {
     pub project: Project,
     pub unresolved_count: i64,
     pub events_24h: i64,
-    pub recent_issues: Vec<Issue>,
+    pub recent_issues: Vec<IssueWithSparkline>,
 }
 
 pub async fn list_with_overview(pool: &SqlitePool) -> sqlx::Result<Vec<ProjectOverview>> {
@@ -142,13 +142,14 @@ pub async fn list_with_overview(pool: &SqlitePool) -> sqlx::Result<Vec<ProjectOv
         .bind(&cutoff_24h)
         .fetch_one(pool)
         .await?;
-        let recent_issues = sqlx::query_as::<_, Issue>(
+        let raw = sqlx::query_as::<_, Issue>(
             "SELECT * FROM issues WHERE project_id = ? \
              ORDER BY last_seen DESC LIMIT 3",
         )
         .bind(p.id)
         .fetch_all(pool)
         .await?;
+        let recent_issues = crate::db::issues::with_sparklines(pool, raw).await?;
         out.push(ProjectOverview {
             project: p,
             unresolved_count,

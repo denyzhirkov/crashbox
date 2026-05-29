@@ -32,6 +32,9 @@ export type Issue = {
   updated_at: string
   spike_alerted_at?: string | null
   snoozed_until?: string | null
+  /** 24-element array, oldest→newest, of events per hour over last 24h. Server-populated on
+   *  list / overview endpoints; absent on direct GET /api/issues/:id. */
+  last_24h_buckets?: number[]
 }
 
 export type EventRow = {

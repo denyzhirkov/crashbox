@@ -42,7 +42,7 @@ pub async fn list(
     State(state): State<AppState>,
     Path(project_id): Path<i64>,
     Query(q): Query<IssueListQuery>,
-) -> AppResult<Json<Vec<issues::Issue>>> {
+) -> AppResult<Json<Vec<issues::IssueWithSparkline>>> {
     let filters = issues::IssueFilters {
         status: q.status,
         level: q.level,
@@ -52,7 +52,8 @@ pub async fn list(
         limit: q.limit.unwrap_or(50),
         offset: q.offset.unwrap_or(0),
     };
-    Ok(Json(issues::list(&state.db, project_id, &filters).await?))
+    let rows = issues::list(&state.db, project_id, &filters).await?;
+    Ok(Json(issues::with_sparklines(&state.db, rows).await?))
 }
 
 /// GET /api/issues/:id

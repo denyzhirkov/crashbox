@@ -3,6 +3,7 @@ import { createResource, createSignal, For, Show } from 'solid-js'
 import { api } from '../api/client'
 import type { Issue, ProjectOverview } from '../api/types'
 import { EdgeBar } from '../components/EdgeBar'
+import { Sparkline } from '../components/Sparkline'
 import { useAuth } from '../lib/auth-context'
 import { relTime } from '../lib/time'
 
@@ -167,13 +168,14 @@ function RecentIssueRow(props: { issue: Issue }) {
       <EdgeBar level={props.issue.level} resolved={isResolved()} />
       <A
         href={`/issues/${props.issue.id}`}
-        class={`flex-1 flex items-baseline gap-3 px-3 py-2 hover:bg-ink-700/30 ${
+        class={`flex-1 flex items-center gap-3 px-3 py-2 hover:bg-ink-700/30 ${
           isResolved() ? 'opacity-50' : ''
         }`}
       >
         <span class="text-[11px] text-ink-400 w-12 text-right tabular-nums shrink-0">
           {props.issue.event_count.toLocaleString()}×
         </span>
+        <Sparkline buckets={props.issue.last_24h_buckets} />
         <span class="text-ink-100 truncate font-mono text-[12px]">{props.issue.title}</span>
         <span class="ml-auto text-[11px] text-ink-400 shrink-0">
           {relTime(props.issue.last_seen)}

@@ -10,6 +10,7 @@ import {
 import { api } from '../api/client'
 import type { Issue } from '../api/types'
 import { EdgeBar } from '../components/EdgeBar'
+import { Sparkline } from '../components/Sparkline'
 import { relTime } from '../lib/time'
 
 type StatusFilter = 'unresolved' | 'resolved' | 'snoozed' | 'all'
@@ -150,15 +151,16 @@ function IssueRow(props: { issue: Issue; focused: boolean; onClick: () => void }
       <A
         href={`/issues/${props.issue.id}`}
         onClick={props.onClick}
-        class={`flex-1 flex items-baseline gap-3 px-3 py-2 hover:bg-ink-700/30 ${dim()} ${
+        class={`flex-1 flex items-center gap-3 px-3 py-2 hover:bg-ink-700/30 ${dim()} ${
           props.focused ? 'bg-ink-700/40' : ''
         }`}
       >
-        <span class="text-[11px] text-ink-400 w-16 text-right tabular-nums">
+        <span class="text-[11px] text-ink-400 w-14 text-right tabular-nums shrink-0">
           {props.issue.event_count.toLocaleString()}×
         </span>
-        <span class="text-ink-100 truncate font-mono">{props.issue.title}</span>
-        <span class="ml-auto text-[11px] text-ink-400">
+        <Sparkline buckets={props.issue.last_24h_buckets} />
+        <span class="text-ink-100 truncate font-mono text-[13px]">{props.issue.title}</span>
+        <span class="ml-auto text-[11px] text-ink-400 shrink-0">
           {relTime(props.issue.last_seen)}
         </span>
       </A>

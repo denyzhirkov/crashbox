@@ -24,6 +24,18 @@ pub struct Issue {
     pub snoozed_until: Option<String>,
 }
 
+/// HTTP-layer representation of an issue with sparkline data attached. We keep the DB type
+/// (`Issue`) decode-clean and only add computed fields at the serialization boundary via
+/// `serde(flatten)`.
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct IssueWithSparkline {
+    #[serde(flatten)]
+    pub issue: Issue,
+    /// 24-element array: counts of events per hour over the last 24h, ordered oldest→newest
+    /// (index 0 = 23-24h ago, index 23 = current hour).
+    pub last_24h_buckets: Vec<i64>,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct IssueFilters {
     pub status: Option<String>,
@@ -110,6 +122,55 @@ pub async fn list(
     qb.push_bind(f.offset.max(0));
 
     qb.build_query_as::<Issue>().fetch_all(pool).await
+}
+
+/// Wrap a batch of `Issue` rows with a 24h sparkline each. Single SQL query for the whole
+/// batch — O(events in last 24h for these issues), with the existing
+/// `idx_events_issue_received` index doing the heavy lifting per issue.
+pub async fn with_sparklines(
+    pool: &SqlitePool,
+    issues: Vec<Issue>,
+) -> sqlx::Result<Vec<IssueWithSparkline>> {
+    if issues.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
+        "SELECT issue_id, \
+                CAST((julianday('now') - julianday(received_at)) * 24 AS INTEGER) AS hour_ago, \
+                COUNT(*) AS cnt \
+         FROM events \
+         WHERE received_at >= datetime('now', '-24 hours') AND issue_id IN (",
+    );
+    {
+        let mut sep = qb.separated(", ");
+        for i in &issues {
+            sep.push_bind(i.id);
+        }
+    }
+    qb.push(") GROUP BY issue_id, hour_ago");
+
+    let rows: Vec<(i64, i64, i64)> = qb.build_query_as().fetch_all(pool).await?;
+
+    let mut by_id: std::collections::HashMap<i64, [i64; 24]> = std::collections::HashMap::new();
+    for (id, hour_ago, cnt) in rows {
+        if !(0..=23).contains(&hour_ago) {
+            continue;
+        }
+        let buckets = by_id.entry(id).or_insert([0; 24]);
+        // hour_ago=0 means current hour → rightmost bar (index 23).
+        let idx = 23 - hour_ago as usize;
+        buckets[idx] += cnt;
+    }
+    Ok(issues
+        .into_iter()
+        .map(|issue| {
+            let arr = by_id.remove(&issue.id).unwrap_or([0; 24]);
+            IssueWithSparkline {
+                issue,
+                last_24h_buckets: arr.to_vec(),
+            }
+        })
+        .collect())
 }
 
 pub async fn set_status(pool: &SqlitePool, id: i64, status: &str) -> sqlx::Result<u64> {

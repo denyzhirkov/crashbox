@@ -159,6 +159,49 @@ async fn projects_list_dsn_and_create() {
 }
 
 #[tokio::test]
+async fn issues_list_includes_24h_sparkline_buckets() {
+    let addr = spawn_app().await;
+    let c = client();
+    login(&c, addr, "admin@example.com", "hunter2").await;
+
+    let payload = serde_json::json!({
+        "platform": "node",
+        "exception": {"values": [{"type": "T", "value": "x"}]}
+    })
+    .to_string();
+    let env_body = format!(
+        "{{}}\n{{\"type\":\"event\",\"length\":{}}}\n{}\n",
+        payload.len(),
+        payload
+    );
+    let ingest = reqwest::Client::new();
+    for _ in 0..3 {
+        ingest
+            .post(format!("http://{addr}/api/1/envelope/"))
+            .header("x-sentry-auth", "Sentry sentry_key=pkmain")
+            .body(env_body.clone())
+            .send()
+            .await
+            .unwrap();
+    }
+
+    let issues: Vec<serde_json::Value> = c
+        .get(format!("http://{addr}/api/projects/1/issues"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(issues.len(), 1);
+    let buckets = issues[0]["last_24h_buckets"].as_array().expect("sparkline array");
+    assert_eq!(buckets.len(), 24, "must be exactly 24 hour buckets");
+    let total: i64 = buckets.iter().filter_map(|v| v.as_i64()).sum();
+    assert_eq!(total, 3);
+    assert_eq!(buckets[23].as_i64().unwrap(), 3, "current hour holds all 3 events");
+}
+
+#[tokio::test]
 async fn issues_filter_and_resolve_flow() {
     let addr = spawn_app().await;
     let c = client();
