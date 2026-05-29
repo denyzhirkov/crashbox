@@ -9,6 +9,8 @@ use serde_json::{json, Value};
 
 use crate::app_state::AppState;
 use crate::db::{events, issues, projects};
+use crate::db::issues::UpsertOutcome;
+use crate::notify::{Kind as NotifyKind, Notification};
 use crate::sentry::{auth, envelope, grouping, normalize};
 
 #[derive(Debug, Deserialize)]
@@ -118,14 +120,42 @@ pub async fn envelope_endpoint(
         let event_ts = ev.timestamp.clone().unwrap_or_else(|| Utc::now().to_rfc3339());
 
         match store_event(&state, project.id, &ev, &fp, &title, &event_ts, raw_str).await {
-            Ok(_) => {
+            Ok((issue_id, outcome, new_event_count)) => {
                 stored_event_id = ev.event_id.clone().or_else(|| Some(String::new()));
                 tracing::info!(
                     project_id = project.id,
                     event_id = ev.event_id.as_deref().unwrap_or("(none)"),
                     fingerprint = %fp,
+                    outcome = ?outcome,
                     "ingested event"
                 );
+
+                // Fire notifications only on issue-level transitions: brand new issue or
+                // resolved → unresolved reopen. Bursts of a known unresolved issue do NOT
+                // trigger here; that's what spike detection (A2) is for.
+                let notify_kind = match outcome {
+                    UpsertOutcome::Created => Some(NotifyKind::NewIssue),
+                    UpsertOutcome::Reopened => Some(NotifyKind::Reopened),
+                    UpsertOutcome::Existing => None,
+                };
+                if let Some(kind) = notify_kind {
+                    if !state.notify.is_empty() {
+                        let link = state.notify.build_link(issue_id);
+                        state.notify.fire(Notification {
+                            kind,
+                            project_name: project.name.clone(),
+                            project_slug: project.slug.clone(),
+                            issue_id,
+                            issue_title: title.clone(),
+                            event_count: new_event_count,
+                            level: ev.level.clone(),
+                            environment: ev.environment.clone(),
+                            release: ev.release.clone(),
+                            link,
+                        });
+                    }
+                }
+
                 // MVP: process only the first event item per envelope.
                 break;
             }
@@ -140,6 +170,7 @@ pub async fn envelope_endpoint(
     (StatusCode::OK, Json(json!({ "id": id_for_response }))).into_response()
 }
 
+/// Returns (issue_id, upsert outcome, new event_count after this event).
 async fn store_event(
     state: &AppState,
     project_id: i64,
@@ -148,12 +179,12 @@ async fn store_event(
     title: &str,
     timestamp_iso: &str,
     raw_json: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<(i64, UpsertOutcome, i64)> {
     // BEGIN IMMEDIATE serializes concurrent writers cleanly via busy_timeout. See
     // `db::begin_write` for the full rationale — `pool.begin()` (= BEGIN DEFERRED) causes
     // SQLITE_BUSY under bursts because two transactions both hold SHARED and race to upgrade.
     let mut tx = crate::db::begin_write(&state.db).await?;
-    let issue_id = issues::upsert(
+    let (issue_id, outcome) = issues::upsert(
         tx.acquire(),
         project_id,
         fingerprint,
@@ -166,8 +197,13 @@ async fn store_event(
     let event_row_id =
         events::insert_full(tx.acquire(), project_id, Some(issue_id), ev, raw_json).await?;
     issues::bump_after_event(tx.acquire(), issue_id, event_row_id, timestamp_iso).await?;
+    let new_event_count: i64 =
+        sqlx::query_scalar("SELECT event_count FROM issues WHERE id = ?")
+            .bind(issue_id)
+            .fetch_one(tx.acquire())
+            .await?;
     tx.commit().await?;
-    Ok(())
+    Ok((issue_id, outcome, new_event_count))
 }
 
 fn refuse(status: StatusCode, msg: &str) -> axum::response::Response {

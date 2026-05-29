@@ -79,16 +79,41 @@ Issue summary rows are **never** deleted by retention — only event rows expire
 | `CRASHBOX_TRUST_PROXY_HEADERS` | `false` | Reserved for `X-Forwarded-*` parsing. |
 | `CRASHBOX_ALLOW_PUBLIC_SIGNUP` | `false` | Hard off in MVP; no signup route exists. |
 
-## Notifications (post-MVP)
+## Notifications
 
-| Variable | Default |
-|---|---|
-| `CRASHBOX_TELEGRAM_BOT_TOKEN` | _(unset)_ |
-| `CRASHBOX_TELEGRAM_CHAT_ID` | _(unset)_ |
-| `CRASHBOX_DISCORD_WEBHOOK_URL` | _(unset)_ |
-| `CRASHBOX_GENERIC_WEBHOOK_URL` | _(unset)_ |
+| Variable | Default | Notes |
+|---|---|---|
+| `CRASHBOX_TELEGRAM_BOT_TOKEN` | _(unset)_ | Set together with `CRASHBOX_TELEGRAM_CHAT_ID`. Both required to enable Telegram delivery. |
+| `CRASHBOX_TELEGRAM_CHAT_ID` | _(unset)_ | Target chat or channel ID (negative integer for groups). |
+| `CRASHBOX_DISCORD_WEBHOOK_URL` | _(unset)_ | Full webhook URL from Discord's channel settings. |
+| `CRASHBOX_GENERIC_WEBHOOK_URL` | _(unset)_ | Any URL — receives a POST with the full `Notification` payload as JSON. Useful for piping into Slack via webhook, PagerDuty, or your own relay. |
+| `CRASHBOX_NOTIFY_MAX_PER_MINUTE` | `30` | Per-notifier token-bucket cap. Excess notifications are **dropped** (logged at INFO), not queued. Keeps a sudden burst of new issues from spamming the channel. |
 
-Currently accepted by `Config::from_env` but not wired anywhere. Setting them has no effect yet.
+**Triggers.** Notifications fire on issue-level transitions only:
+
+- **`new_issue`** — first event of a previously unseen fingerprint
+- **`reopened`** — event arrives on an issue whose status was `resolved`; the status auto-flips back to `unresolved`
+
+A second / third / 100th event of an already-unresolved issue does **not** notify — by design, a single shared deploy that breaks a known issue shouldn't spam the channel. The separate **spike detection** feature (planned) covers "this known issue suddenly burns much hotter than baseline".
+
+**Delivery.** Each notifier runs in a `tokio::spawn` from the ingest path, so a slow Telegram API never blocks the SDK's request. Delivery failures are logged at `WARN` and not retried — by design, an error tracker that retries its own outbound calls amplifies outages.
+
+**Generic webhook payload** (the same shape Telegram/Discord adapters consume):
+
+```json
+{
+  "kind": "new_issue",
+  "project_name": "Demo",
+  "project_slug": "demo",
+  "issue_id": 7,
+  "issue_title": "TypeError: x is undefined",
+  "event_count": 1,
+  "level": "error",
+  "environment": "production",
+  "release": "1.4.2",
+  "link": "http://crashbox.internal/issues/7"
+}
+```
 
 ## Advanced logging
 

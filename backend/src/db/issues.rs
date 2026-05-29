@@ -94,9 +94,21 @@ pub async fn set_status(pool: &SqlitePool, id: i64, status: &str) -> sqlx::Resul
     Ok(result.rows_affected())
 }
 
+/// What happened during [`upsert`]. The notify hub keys notifications off this:
+/// - `Created` → fire `NewIssue` alert
+/// - `Reopened` → fire `Reopened` alert (we auto-flipped status back to `unresolved`)
+/// - `Existing` → no notification (handled by spike detection separately)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpsertOutcome {
+    Created,
+    Reopened,
+    Existing,
+}
+
 /// Find an existing issue's id for (project_id, fingerprint), or insert a new one. Always returns
-/// the issue id. The caller is expected to bump `event_count` / `last_seen` separately via
-/// [`bump_after_event`] once the event row exists (so `last_event_id` can be set).
+/// the issue id and whether the issue was newly created, reopened from `resolved`, or already
+/// existed and was unresolved. The caller bumps `event_count` / `last_seen` via
+/// [`bump_after_event`] once the event row exists.
 pub async fn upsert(
     conn: &mut SqliteConnection,
     project_id: i64,
@@ -105,16 +117,28 @@ pub async fn upsert(
     level: Option<&str>,
     platform: Option<&str>,
     timestamp_iso: &str,
-) -> sqlx::Result<i64> {
-    let existing: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM issues WHERE project_id = ? AND fingerprint = ?",
+) -> sqlx::Result<(i64, UpsertOutcome)> {
+    let existing: Option<(i64, String)> = sqlx::query_as(
+        "SELECT id, status FROM issues WHERE project_id = ? AND fingerprint = ?",
     )
     .bind(project_id)
     .bind(fingerprint)
     .fetch_optional(&mut *conn)
     .await?;
-    if let Some(id) = existing {
-        return Ok(id);
+
+    if let Some((id, status)) = existing {
+        if status == "resolved" {
+            let now = Utc::now().to_rfc3339();
+            sqlx::query(
+                "UPDATE issues SET status = 'unresolved', updated_at = ? WHERE id = ?",
+            )
+            .bind(&now)
+            .bind(id)
+            .execute(&mut *conn)
+            .await?;
+            return Ok((id, UpsertOutcome::Reopened));
+        }
+        return Ok((id, UpsertOutcome::Existing));
     }
 
     let now = Utc::now().to_rfc3339();
@@ -135,7 +159,7 @@ pub async fn upsert(
     .bind(&now)
     .execute(&mut *conn)
     .await?;
-    Ok(row.last_insert_rowid())
+    Ok((row.last_insert_rowid(), UpsertOutcome::Created))
 }
 
 /// After the event row is inserted, update the issue's counters and pointers.

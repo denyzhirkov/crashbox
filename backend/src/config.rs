@@ -31,6 +31,7 @@ pub struct Config {
     pub retention: Retention,
     pub ui: UiConfig,
     pub security: SecurityConfig,
+    pub notify: NotifyConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +81,17 @@ pub struct SecurityConfig {
     pub cors_allowed_origins: String,
     pub trust_proxy_headers: bool,
     pub allow_public_signup: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct NotifyConfig {
+    pub telegram_bot_token: Option<String>,
+    pub telegram_chat_id: Option<String>,
+    pub discord_webhook_url: Option<String>,
+    pub generic_webhook_url: Option<String>,
+    /// Per-notifier cap. Defaults to 30/min so a sudden burst of new issues doesn't drown the
+    /// channel; rate-limited messages are dropped (logged) rather than queued.
+    pub max_per_minute: u32,
 }
 
 impl Config {
@@ -138,6 +150,13 @@ impl Config {
                 cors_allowed_origins: env_or("CRASHBOX_CORS_ALLOWED_ORIGINS", "*"),
                 trust_proxy_headers: parse_env("CRASHBOX_TRUST_PROXY_HEADERS", "false")?,
                 allow_public_signup: parse_env("CRASHBOX_ALLOW_PUBLIC_SIGNUP", "false")?,
+            },
+            notify: NotifyConfig {
+                telegram_bot_token: env_opt("CRASHBOX_TELEGRAM_BOT_TOKEN"),
+                telegram_chat_id: env_opt("CRASHBOX_TELEGRAM_CHAT_ID"),
+                discord_webhook_url: env_opt("CRASHBOX_DISCORD_WEBHOOK_URL"),
+                generic_webhook_url: env_opt("CRASHBOX_GENERIC_WEBHOOK_URL"),
+                max_per_minute: parse_env("CRASHBOX_NOTIFY_MAX_PER_MINUTE", "30")?,
             },
         })
     }

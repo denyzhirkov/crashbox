@@ -159,6 +159,12 @@ The title shown in the UI is built from the event:
 
 Title is set on first occurrence of an issue and not changed afterwards.
 
+### Auto-reopen
+
+If an event lands on an issue whose status is `resolved`, the status flips back to `unresolved`
+in the same transaction as the event insert. A `reopened` notification fires (see
+`docs/configuration.md` → Notifications).
+
 ---
 
 ## What we do NOT implement

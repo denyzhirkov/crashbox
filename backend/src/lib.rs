@@ -5,5 +5,6 @@ pub mod db;
 pub mod http;
 pub mod ingest;
 pub mod jobs;
+pub mod notify;
 pub mod security;
 pub mod sentry;
