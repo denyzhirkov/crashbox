@@ -1,7 +1,7 @@
 services:
   crashbox:
     # Pull from Docker Hub by default; uncomment `build:` to build locally instead.
-    image: denyzhirkov/crashbox:1.0.0
+    image: denyzhirkov/crashbox:1.1.0
     # build:
     #   context: .
     #   dockerfile: Dockerfile
