@@ -106,6 +106,7 @@ async fn keeps_last_n_per_issue_even_if_old() {
         retention_days: 30,
         max_events_per_issue: 3,
         cleanup_interval_seconds: 0,
+        auto_resolve_days: 0,
     };
     let deleted = cleanup::run_once(&pool, &retention).await.expect("sweep");
     assert_eq!(deleted, 2, "should delete 2 oldest, keep 3 newest");
@@ -135,6 +136,7 @@ async fn max_per_issue_is_a_floor_protects_active_issues() {
         retention_days: 30,
         max_events_per_issue: 10,
         cleanup_interval_seconds: 0,
+        auto_resolve_days: 0,
     };
     let deleted = cleanup::run_once(&pool, &retention).await.expect("sweep");
     assert_eq!(deleted, 0);
@@ -145,6 +147,7 @@ async fn max_per_issue_is_a_floor_protects_active_issues() {
         retention_days: 30,
         max_events_per_issue: 2,
         cleanup_interval_seconds: 0,
+        auto_resolve_days: 0,
     };
     let deleted2 = cleanup::run_once(&pool, &tighter).await.expect("sweep");
     assert_eq!(deleted2, 1);
@@ -164,10 +167,90 @@ async fn orphan_events_without_issue_age_out_purely_by_age() {
         retention_days: 30,
         max_events_per_issue: 100,
         cleanup_interval_seconds: 0,
+        auto_resolve_days: 0,
     };
     let deleted = cleanup::run_once(&pool, &retention).await.expect("sweep");
     assert_eq!(deleted, 1);
     assert_eq!(count(&pool, "events").await, 1);
+}
+
+#[tokio::test]
+async fn auto_resolves_stale_unresolved_issues() {
+    let pool = fresh_pool().await;
+    let project_id = insert_project(&pool).await;
+
+    // Issue A: last_seen 30 days ago, status=unresolved → should auto-resolve.
+    let stale_id = insert_issue(&pool, project_id, "stale").await;
+    let long_ago = (Utc::now() - ChronoDuration::days(30)).to_rfc3339();
+    sqlx::query("UPDATE issues SET last_seen = ? WHERE id = ?")
+        .bind(&long_ago)
+        .bind(stale_id)
+        .execute(&pool)
+        .await
+        .expect("update");
+
+    // Issue B: last_seen 1 day ago, status=unresolved → must stay unresolved.
+    let fresh_id = insert_issue(&pool, project_id, "fresh").await;
+    let yesterday = (Utc::now() - ChronoDuration::days(1)).to_rfc3339();
+    sqlx::query("UPDATE issues SET last_seen = ? WHERE id = ?")
+        .bind(&yesterday)
+        .bind(fresh_id)
+        .execute(&pool)
+        .await
+        .expect("update");
+
+    let retention = Retention {
+        retention_days: 365, // irrelevant — we only care about auto-resolve here
+        max_events_per_issue: 100,
+        cleanup_interval_seconds: 0,
+        auto_resolve_days: 14,
+    };
+    cleanup::run_once(&pool, &retention).await.expect("sweep");
+
+    let stale_status: String =
+        sqlx::query_scalar("SELECT status FROM issues WHERE id = ?")
+            .bind(stale_id)
+            .fetch_one(&pool)
+            .await
+            .expect("stale status");
+    assert_eq!(stale_status, "resolved");
+
+    let fresh_status: String =
+        sqlx::query_scalar("SELECT status FROM issues WHERE id = ?")
+            .bind(fresh_id)
+            .fetch_one(&pool)
+            .await
+            .expect("fresh status");
+    assert_eq!(fresh_status, "unresolved");
+}
+
+#[tokio::test]
+async fn auto_resolve_disabled_when_days_is_zero() {
+    let pool = fresh_pool().await;
+    let project_id = insert_project(&pool).await;
+    let issue_id = insert_issue(&pool, project_id, "old").await;
+    let long_ago = (Utc::now() - ChronoDuration::days(99)).to_rfc3339();
+    sqlx::query("UPDATE issues SET last_seen = ? WHERE id = ?")
+        .bind(&long_ago)
+        .bind(issue_id)
+        .execute(&pool)
+        .await
+        .expect("update");
+
+    let retention = Retention {
+        retention_days: 365,
+        max_events_per_issue: 100,
+        cleanup_interval_seconds: 0,
+        auto_resolve_days: 0, // off
+    };
+    cleanup::run_once(&pool, &retention).await.expect("sweep");
+
+    let status: String = sqlx::query_scalar("SELECT status FROM issues WHERE id = ?")
+        .bind(issue_id)
+        .fetch_one(&pool)
+        .await
+        .expect("status");
+    assert_eq!(status, "unresolved");
 }
 
 #[tokio::test]
@@ -184,6 +267,7 @@ async fn fresh_events_inside_retention_never_deleted() {
         retention_days: 30,
         max_events_per_issue: 1,
         cleanup_interval_seconds: 0,
+        auto_resolve_days: 0,
     };
     let deleted = cleanup::run_once(&pool, &retention).await.expect("sweep");
     assert_eq!(deleted, 0, "events within retention window must not be deleted");

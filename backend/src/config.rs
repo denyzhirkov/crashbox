@@ -67,6 +67,8 @@ pub struct Retention {
     pub retention_days: u32,
     pub max_events_per_issue: u32,
     pub cleanup_interval_seconds: u64,
+    /// Auto-resolve issues that haven't seen an event for this many days. `0` disables.
+    pub auto_resolve_days: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -153,6 +155,7 @@ impl Config {
                 retention_days: parse_env("CRASHBOX_RETENTION_DAYS", "30")?,
                 max_events_per_issue: parse_env("CRASHBOX_MAX_EVENTS_PER_ISSUE", "100")?,
                 cleanup_interval_seconds: parse_env("CRASHBOX_CLEANUP_INTERVAL_SECONDS", "3600")?,
+                auto_resolve_days: parse_env("CRASHBOX_AUTO_RESOLVE_DAYS", "14")?,
             },
             spike: SpikeConfig {
                 check_interval_seconds: parse_env("CRASHBOX_SPIKE_CHECK_INTERVAL_SECONDS", "300")?,

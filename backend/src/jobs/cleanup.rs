@@ -48,8 +48,13 @@ async fn run_loop(pool: SqlitePool, retention: Arc<Retention>, cancel: Cancellat
     }
 }
 
-/// Run a single retention sweep. Returns the number of event rows deleted.
+/// Run a single retention + auto-resolve sweep. Returns the number of event rows deleted.
+///
+/// Order: auto-resolve runs FIRST, so when retention then deletes events of a freshly
+/// auto-resolved issue we don't waste work re-checking the same issue.
 pub async fn run_once(pool: &SqlitePool, retention: &Retention) -> sqlx::Result<u64> {
+    auto_resolve_stale_issues(pool, retention).await?;
+
     let cutoff = Utc::now() - chrono::Duration::days(retention.retention_days as i64);
     let cutoff_iso = cutoff.to_rfc3339();
     let max_per_issue = retention.max_events_per_issue as i64;
@@ -88,4 +93,30 @@ pub async fn run_once(pool: &SqlitePool, retention: &Retention) -> sqlx::Result<
         tracing::debug!(cutoff = %cutoff_iso, "retention: no events to delete");
     }
     Ok(deleted)
+}
+
+/// Flip status to `resolved` for any `unresolved` issue whose `last_seen` is older than
+/// `auto_resolve_days`. Auto-reopen is handled implicitly by [`crate::db::issues::upsert`]:
+/// if the next event for an auto-resolved fingerprint arrives, the upsert flips status back to
+/// `unresolved` and the notify hub emits a `Reopened` alert.
+async fn auto_resolve_stale_issues(pool: &SqlitePool, retention: &Retention) -> sqlx::Result<u64> {
+    if retention.auto_resolve_days == 0 {
+        return Ok(0);
+    }
+    let cutoff = Utc::now() - chrono::Duration::days(retention.auto_resolve_days as i64);
+    let cutoff_iso = cutoff.to_rfc3339();
+    let now_iso = Utc::now().to_rfc3339();
+    let res = sqlx::query(
+        "UPDATE issues SET status = 'resolved', updated_at = ? \
+         WHERE status = 'unresolved' AND last_seen < ?",
+    )
+    .bind(&now_iso)
+    .bind(&cutoff_iso)
+    .execute(pool)
+    .await?;
+    let n = res.rows_affected();
+    if n > 0 {
+        tracing::info!(auto_resolved = n, cutoff = %cutoff_iso, "auto-resolved stale issues");
+    }
+    Ok(n)
 }

@@ -59,6 +59,7 @@ The DSN is logged once at startup using `INFO` level. Subsequent logs mask the p
 | `CRASHBOX_RETENTION_DAYS` | `30` | Events older than this are eligible for deletion. |
 | `CRASHBOX_MAX_EVENTS_PER_ISSUE` | `100` | **Floor**, not cap: the N most-recent events per issue are protected from age-based deletion. |
 | `CRASHBOX_CLEANUP_INTERVAL_SECONDS` | `3600` | How often the retention sweep runs. Set to `0` to disable the job entirely. |
+| `CRASHBOX_AUTO_RESOLVE_DAYS` | `14` | Auto-flip `unresolved` issues to `resolved` after this many days without a new event. `0` disables. Auto-reopen happens implicitly: if a new event arrives on an auto-resolved fingerprint, the next ingest flips status back to `unresolved` and the notify hub fires a `reopened` alert. |
 
 Issue summary rows are **never** deleted by retention — only event rows expire.
 
