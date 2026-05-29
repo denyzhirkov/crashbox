@@ -1,5 +1,6 @@
 pub mod app_state;
 pub mod bootstrap;
+pub mod cli;
 pub mod config;
 pub mod db;
 pub mod http;

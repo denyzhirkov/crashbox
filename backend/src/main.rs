@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
+use clap::Parser;
 use crashbox::app_state::AppState;
+use crashbox::cli::Cli;
 use crashbox::config::Config;
 use crashbox::{bootstrap, db, http, jobs};
 use tokio_util::sync::CancellationToken;
@@ -8,7 +10,15 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
     let cfg = Config::from_env()?;
+
+    // Run CLI subcommand if one was given; tracing is initialized lightly for them so they
+    // don't drown the user in INFO spans.
+    if crashbox::cli::run_if_present(cli, &cfg).await? {
+        return Ok(());
+    }
+
     init_tracing(&cfg.log_level);
 
     tracing::info!(

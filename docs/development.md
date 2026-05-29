@@ -68,6 +68,34 @@ If you want to validate a new SDK or version against Crashbox:
 3. Add an integration test that posts it through `/api/:project_id/envelope/` and asserts on
    the resulting issue/event row.
 
+## CLI
+
+The same binary that runs the HTTP server also exposes a small admin CLI. All subcommands read
+`CRASHBOX_DATABASE_URL` directly — no network, no auth, runs over the local SQLite file.
+
+```bash
+crashbox                              # = `crashbox serve`, starts HTTP server
+crashbox --help                       # list of subcommands
+crashbox projects list                # tabular project list with masked public keys
+crashbox issues list --status all --limit 50
+crashbox issues resolve 7
+crashbox issues unresolve 7
+crashbox projects rotate-key 1        # prints the new DSN to stdout
+crashbox users reset-password admin@example.com           # interactive
+echo "newpass" | crashbox users reset-password u@a.b --stdin
+crashbox backup /data/snap.db         # atomic VACUUM INTO, refuses overwrite
+```
+
+Output: ANSI tables when stdout is a TTY, tab-separated when piped — so
+`crashbox issues list | awk '$3 == "unresolved"'` works.
+
+In Docker, exec into the running container:
+
+```bash
+docker exec crashbox crashbox projects list
+docker exec crashbox crashbox issues resolve 42
+```
+
 ## Docker
 
 ```bash
