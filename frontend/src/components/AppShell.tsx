@@ -1,6 +1,7 @@
 import { A, useNavigate } from '@solidjs/router'
 import { type JSX, Show } from 'solid-js'
 import { useAuth } from '../lib/auth-context'
+import { CommandPalette } from './CommandPalette'
 
 export function AppShell(props: { children: JSX.Element }) {
   const { user, logout } = useAuth()
@@ -41,10 +42,11 @@ export function AppShell(props: { children: JSX.Element }) {
       <main class="flex-1 px-6 py-6 max-w-[1200px] w-full mx-auto">{props.children}</main>
       <footer class="border-t border-ink-600 px-6 py-2 text-[11px] text-ink-400 flex gap-4">
         <span><kbd class="text-ink-200">j</kbd>/<kbd class="text-ink-200">k</kbd> nav</span>
-        <span><kbd class="text-ink-200">e</kbd> resolve</span>
         <span><kbd class="text-ink-200">/</kbd> search</span>
+        <span><kbd class="text-ink-200">⌘k</kbd> commands</span>
         <span class="ml-auto opacity-60">// crashbox</span>
       </footer>
+      <CommandPalette />
     </div>
   )
 }
