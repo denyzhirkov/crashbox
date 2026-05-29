@@ -36,6 +36,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 rpassword = "7"
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.16", default-features = false }
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies"] }

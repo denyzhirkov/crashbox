@@ -83,6 +83,7 @@ pub async fn run_once(pool: &SqlitePool, retention: &Retention) -> sqlx::Result<
 
     let deleted = res.rows_affected();
     if deleted > 0 {
+        metrics::counter!("crashbox_retention_events_deleted_total").increment(deleted);
         tracing::info!(
             deleted,
             cutoff = %cutoff_iso,

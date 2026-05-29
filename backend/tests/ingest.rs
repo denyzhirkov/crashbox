@@ -33,7 +33,7 @@ async fn spawn_app() -> (SocketAddr, sqlx::SqlitePool) {
         .await
         .expect("bootstrap");
 
-    let state = AppState::new(cfg, pool.clone());
+    let state = AppState::new(cfg, pool.clone(), crashbox::metrics_layer::MetricsHandle::dummy());
     let app = http::routes::build(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

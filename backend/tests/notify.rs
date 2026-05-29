@@ -78,7 +78,7 @@ async fn spawn_crashbox(
     db::migrate(&pool).await.unwrap();
     crashbox::bootstrap::run(&pool, &cfg).await.unwrap();
 
-    let state = AppState::new(cfg, pool.clone());
+    let state = AppState::new(cfg, pool.clone(), crashbox::metrics_layer::MetricsHandle::dummy());
     let app = http_mod::routes::build(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

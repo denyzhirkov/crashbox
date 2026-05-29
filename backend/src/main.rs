@@ -34,7 +34,11 @@ async fn main() -> anyhow::Result<()> {
     let cancel = CancellationToken::new();
     jobs::cleanup::spawn(pool.clone(), Arc::new(cfg.retention.clone()), cancel.clone());
 
-    let state = AppState::new(cfg.clone(), pool.clone());
+    let metrics_handle = crashbox::metrics_layer::init();
+    let metrics = crashbox::metrics_layer::MetricsHandle {
+        handle: Arc::new(metrics_handle),
+    };
+    let state = AppState::new(cfg.clone(), pool.clone(), metrics);
     jobs::spike::spawn(
         pool,
         Arc::new(cfg.spike.clone()),

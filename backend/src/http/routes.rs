@@ -5,6 +5,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::app_state::AppState;
 use crate::http::{assets, auth, health, ingest, issues, projects};
+use crate::metrics_layer;
 
 pub fn build(state: AppState) -> Router {
     let envelope_limit = state.config.ingest.max_envelope_bytes;
@@ -37,9 +38,11 @@ pub fn build(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
+        .route("/metrics", get(metrics_layer::render))
         .merge(ingest_router)
         .merge(admin_api)
         .fallback(assets::fallback)
+        .layer(axum::middleware::from_fn(metrics_layer::http_middleware))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

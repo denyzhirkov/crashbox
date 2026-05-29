@@ -33,6 +33,11 @@ pub async fn envelope_endpoint(
 ) -> impl IntoResponse {
     let limit = state.config.ingest.max_envelope_bytes;
     if body.len() > limit {
+        metrics::counter!(
+            "crashbox_events_dropped_total",
+            "reason" => "too_large_envelope"
+        )
+        .increment(1);
         return refuse(
             StatusCode::PAYLOAD_TOO_LARGE,
             "envelope exceeds CRASHBOX_MAX_ENVELOPE_BYTES",
@@ -44,26 +49,46 @@ pub async fn envelope_endpoint(
     let key = auth::extract_sentry_key(auth_header, None)
         .or_else(|| raw_query_key.map(str::to_string));
     let Some(public_key) = key else {
+        metrics::counter!("crashbox_events_dropped_total", "reason" => "bad_key").increment(1);
         return refuse(StatusCode::UNAUTHORIZED, "missing sentry_key");
     };
 
     let project = match projects::find_by_public_key(&state.db, &public_key).await {
         Ok(Some(p)) => p,
-        Ok(None) => return refuse(StatusCode::UNAUTHORIZED, "unknown sentry_key"),
+        Ok(None) => {
+            metrics::counter!("crashbox_events_dropped_total", "reason" => "bad_key")
+                .increment(1);
+            return refuse(StatusCode::UNAUTHORIZED, "unknown sentry_key");
+        }
         Err(e) => {
             tracing::error!(error = %e, "db error looking up project");
+            metrics::counter!("crashbox_events_dropped_total", "reason" => "db_error")
+                .increment(1);
             return refuse(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
     if project.id != project_id {
+        metrics::counter!("crashbox_events_dropped_total", "reason" => "bad_key").increment(1);
         return refuse(
             StatusCode::UNAUTHORIZED,
             "sentry_key does not match project_id in path",
         );
     }
 
+    metrics::counter!(
+        "crashbox_envelope_bytes_total",
+        "project" => project.slug.clone()
+    )
+    .increment(body.len() as u64);
+
     let decision = state.rate_limiter.check(project.id);
     if !decision.allowed {
+        metrics::counter!(
+            "crashbox_events_dropped_total",
+            "reason" => "rate_limit",
+            "project" => project.slug.clone()
+        )
+        .increment(1);
         let mut resp = (
             StatusCode::TOO_MANY_REQUESTS,
             Json(json!({"error": "rate limit exceeded"})),
@@ -79,6 +104,11 @@ pub async fn envelope_endpoint(
         Ok(e) => e,
         Err(e) => {
             tracing::debug!(project_id = project.id, error = %e, "envelope parse failed");
+            metrics::counter!(
+                "crashbox_events_dropped_total",
+                "reason" => "bad_envelope"
+            )
+            .increment(1);
             return refuse(StatusCode::BAD_REQUEST, &format!("invalid envelope: {e}"));
         }
     };
@@ -121,6 +151,12 @@ pub async fn envelope_endpoint(
 
         match store_event(&state, project.id, &ev, &fp, &title, &event_ts, raw_str).await {
             Ok((issue_id, outcome, new_event_count)) => {
+                metrics::counter!(
+                    "crashbox_events_ingested_total",
+                    "project" => project.slug.clone(),
+                    "level" => ev.level.clone().unwrap_or_else(|| "unknown".to_string()),
+                )
+                .increment(1);
                 stored_event_id = ev.event_id.clone().or_else(|| Some(String::new()));
                 tracing::info!(
                     project_id = project.id,
@@ -163,6 +199,11 @@ pub async fn envelope_endpoint(
             }
             Err(e) => {
                 tracing::error!(error = %e, "store_event failed");
+                metrics::counter!(
+                    "crashbox_events_dropped_total",
+                    "reason" => "db_error"
+                )
+                .increment(1);
                 return refuse(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
             }
         }

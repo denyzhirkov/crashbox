@@ -41,7 +41,7 @@ async fn spawn_app() -> SocketAddr {
     db::migrate(&pool).await.unwrap();
     crashbox::bootstrap::run(&pool, &cfg).await.unwrap();
 
-    let state = AppState::new(cfg, pool);
+    let state = AppState::new(cfg, pool, crashbox::metrics_layer::MetricsHandle::dummy());
     let app = http::routes::build(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

@@ -15,6 +15,8 @@ what we do — and don't — accept.
 | POST | `/api/:project_id/envelope` | SDK envelope upload | ✅ supported |
 | POST | `/api/:project_id/envelope/` | trailing-slash variant | ✅ supported |
 | POST | `/api/:project_id/store/` | legacy non-envelope endpoint | ❌ not in MVP |
+| GET | `/metrics` | Prometheus scrape — see Metrics below | ✅ |
+| GET | `/healthz`, `/readyz` | liveness / readiness probes | ✅ |
 
 The envelope endpoint matches the path SDKs derive from a DSN of the form
 `http(s)://<public_key>@<host>[:port]/<project_id>`.
@@ -179,6 +181,37 @@ projects-overview "recent issues" block. They surface under `?status=snoozed`. `
 returns everything regardless.
 
 ---
+
+## Metrics
+
+`GET /metrics` returns Prometheus text format (`Content-Type: text/plain; version=0.0.4`).
+No auth — standard practice; restrict via reverse proxy or firewall if running on a public IP.
+
+Metric families exposed:
+
+| Name | Type | Labels | Description |
+|---|---|---|---|
+| `crashbox_events_ingested_total` | counter | `project`, `level` | Events accepted and stored |
+| `crashbox_events_dropped_total` | counter | `reason` (`bad_key` / `bad_envelope` / `too_large_envelope` / `rate_limit` / `db_error`) | Events rejected, by reason |
+| `crashbox_envelope_bytes_total` | counter | `project` | Total bytes of envelope bodies accepted (post auth) |
+| `crashbox_retention_events_deleted_total` | counter | — | Events deleted by the retention sweep |
+| `crashbox_db_pool_size` | gauge | — | SQLx pool current size (refreshed on scrape) |
+| `crashbox_db_pool_idle` | gauge | — | SQLx pool idle connections |
+| `crashbox_http_requests_total` | counter | `method`, `status_class` (`2xx` / `4xx` / `5xx`) | Every HTTP response |
+| `crashbox_http_request_duration_seconds` | summary | `method` | Per-method latency quantiles |
+
+Labels are deliberately low-cardinality (no event IDs, no request paths). Project labels use
+the project's slug, not its id.
+
+Example Prometheus scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: crashbox
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['crashbox.internal:8080']
+```
 
 ## What we do NOT implement
 
