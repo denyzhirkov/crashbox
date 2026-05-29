@@ -13,11 +13,12 @@ impl DiscordNotifier {
     }
 }
 
-/// Discord colour conventions: red for new issue, amber for re-open.
+/// Discord colour conventions: red for new issue, amber for re-open / spike.
 fn color(kind: Kind) -> u32 {
     match kind {
         Kind::NewIssue => 0x_E3_40_2D, // matches Crashbox crash-red
         Kind::Reopened => 0x_F0_B4_00, // amber
+        Kind::Spike => 0x_E3_40_2D,    // crash-red — spikes are bad news
     }
 }
 

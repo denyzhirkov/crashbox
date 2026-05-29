@@ -24,7 +24,13 @@ async fn main() -> anyhow::Result<()> {
     let cancel = CancellationToken::new();
     jobs::cleanup::spawn(pool.clone(), Arc::new(cfg.retention.clone()), cancel.clone());
 
-    let state = AppState::new(cfg.clone(), pool);
+    let state = AppState::new(cfg.clone(), pool.clone());
+    jobs::spike::spawn(
+        pool,
+        Arc::new(cfg.spike.clone()),
+        state.notify.clone(),
+        cancel.clone(),
+    );
     let app = http::routes::build(state);
 
     let listener = tokio::net::TcpListener::bind(cfg.bind_addr()).await?;

@@ -62,6 +62,19 @@ The DSN is logged once at startup using `INFO` level. Subsequent logs mask the p
 
 Issue summary rows are **never** deleted by retention — only event rows expire.
 
+## Spike detection
+
+| Variable | Default | Notes |
+|---|---|---|
+| `CRASHBOX_SPIKE_CHECK_INTERVAL_SECONDS` | `300` | How often to scan for spiking issues. `0` disables the job entirely. |
+| `CRASHBOX_SPIKE_MIN_EVENTS_PER_HOUR` | `10` | An issue needs at least this many events in the last hour to be considered. Prevents noisy alerts on tiny numbers. |
+| `CRASHBOX_SPIKE_RATIO_THRESHOLD` | `5.0` | Current-hour rate must be at least this many times higher than the prior-23h baseline. |
+| `CRASHBOX_SPIKE_COOLDOWN_SECONDS` | `3600` | After a spike alert for an issue, suppress further spike alerts for this issue for N seconds. Stored as `issues.spike_alerted_at`. |
+
+Spike alerts go through the same notify channels as `new_issue` / `reopened` (see Notifications below), with `kind=spike` plus `current_hour` and `baseline_per_hour` fields in the JSON payload. Spikes are only computed for issues that already exist (have an `issue_id`) — brand-new bursts are covered by `new_issue` triggers from the ingest path.
+
+The job is also disabled automatically when no notifiers are configured — no point scanning if there's nowhere to send the result.
+
 ## UI
 
 | Variable | Default | Notes |
@@ -93,12 +106,13 @@ Issue summary rows are **never** deleted by retention — only event rows expire
 
 - **`new_issue`** — first event of a previously unseen fingerprint
 - **`reopened`** — event arrives on an issue whose status was `resolved`; the status auto-flips back to `unresolved`
+- **`spike`** — known unresolved issue is suddenly burning N× hotter than its baseline (see Spike detection above)
 
-A second / third / 100th event of an already-unresolved issue does **not** notify — by design, a single shared deploy that breaks a known issue shouldn't spam the channel. The separate **spike detection** feature (planned) covers "this known issue suddenly burns much hotter than baseline".
+A second / third / 100th event of an already-unresolved issue does **not** trigger from the ingest path — that's the job of the spike detection sweep. By design, a single shared deploy that breaks a known issue shouldn't spam the channel with every individual event.
 
 **Delivery.** Each notifier runs in a `tokio::spawn` from the ingest path, so a slow Telegram API never blocks the SDK's request. Delivery failures are logged at `WARN` and not retried — by design, an error tracker that retries its own outbound calls amplifies outages.
 
-**Generic webhook payload** (the same shape Telegram/Discord adapters consume):
+**Generic webhook payload** (the same shape Telegram/Discord adapters consume). For `kind=spike` the payload additionally contains `current_hour` and `baseline_per_hour`:
 
 ```json
 {
@@ -112,6 +126,21 @@ A second / third / 100th event of an already-unresolved issue does **not** notif
   "environment": "production",
   "release": "1.4.2",
   "link": "http://crashbox.internal/issues/7"
+}
+```
+
+```json
+{
+  "kind": "spike",
+  "project_name": "Demo",
+  "project_slug": "demo",
+  "issue_id": 7,
+  "issue_title": "TypeError: x is undefined",
+  "event_count": 30,
+  "level": "error",
+  "link": "http://crashbox.internal/issues/7",
+  "current_hour": 30,
+  "baseline_per_hour": 0.22
 }
 ```
 

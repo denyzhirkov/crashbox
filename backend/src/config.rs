@@ -29,6 +29,7 @@ pub struct Config {
     pub project: ProjectBootstrap,
     pub ingest: IngestLimits,
     pub retention: Retention,
+    pub spike: SpikeConfig,
     pub ui: UiConfig,
     pub security: SecurityConfig,
     pub notify: NotifyConfig,
@@ -66,6 +67,19 @@ pub struct Retention {
     pub retention_days: u32,
     pub max_events_per_issue: u32,
     pub cleanup_interval_seconds: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpikeConfig {
+    /// How often to run a spike check. Default 5 min. `0` disables the job.
+    pub check_interval_seconds: u64,
+    /// Minimum events in the last hour to consider an issue spiking. Default 10 — below this,
+    /// noise dominates and we'd alert on bumps that don't matter.
+    pub min_events_per_hour: u32,
+    /// Required ratio of (current hour rate) / (prior-23h baseline). Default 5.0.
+    pub ratio_threshold: f64,
+    /// Per-issue cooldown in seconds after a spike alert. Default 3600 (1h).
+    pub cooldown_seconds: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +153,12 @@ impl Config {
                 retention_days: parse_env("CRASHBOX_RETENTION_DAYS", "30")?,
                 max_events_per_issue: parse_env("CRASHBOX_MAX_EVENTS_PER_ISSUE", "100")?,
                 cleanup_interval_seconds: parse_env("CRASHBOX_CLEANUP_INTERVAL_SECONDS", "3600")?,
+            },
+            spike: SpikeConfig {
+                check_interval_seconds: parse_env("CRASHBOX_SPIKE_CHECK_INTERVAL_SECONDS", "300")?,
+                min_events_per_hour: parse_env("CRASHBOX_SPIKE_MIN_EVENTS_PER_HOUR", "10")?,
+                ratio_threshold: parse_env("CRASHBOX_SPIKE_RATIO_THRESHOLD", "5.0")?,
+                cooldown_seconds: parse_env("CRASHBOX_SPIKE_COOLDOWN_SECONDS", "3600")?,
             },
             ui: UiConfig {
                 enabled: parse_env("CRASHBOX_UI_ENABLED", "true")?,

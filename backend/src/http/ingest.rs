@@ -152,6 +152,8 @@ pub async fn envelope_endpoint(
                             environment: ev.environment.clone(),
                             release: ev.release.clone(),
                             link,
+                            current_hour: None,
+                            baseline_per_hour: None,
                         });
                     }
                 }

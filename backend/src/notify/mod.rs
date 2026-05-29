@@ -31,6 +31,7 @@ use crate::config::Config;
 pub enum Kind {
     NewIssue,
     Reopened,
+    Spike,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -45,6 +46,12 @@ pub struct Notification {
     pub environment: Option<String>,
     pub release: Option<String>,
     pub link: String,
+    /// Set only when `kind == Spike`: events seen in the last hour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_hour: Option<i64>,
+    /// Set only when `kind == Spike`: events-per-hour averaged over the prior 23h.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub baseline_per_hour: Option<f64>,
 }
 
 impl Notification {
@@ -53,8 +60,15 @@ impl Notification {
         let prefix = match self.kind {
             Kind::NewIssue => "🆕 new issue",
             Kind::Reopened => "🔁 reopened",
+            Kind::Spike => "🔥 spike",
         };
-        format!("[{}] {prefix}: {}", self.project_slug, self.issue_title)
+        match (self.kind, self.current_hour, self.baseline_per_hour) {
+            (Kind::Spike, Some(cur), Some(base)) => format!(
+                "[{}] {prefix}: {} — {cur}/h (was ~{base:.1}/h)",
+                self.project_slug, self.issue_title,
+            ),
+            _ => format!("[{}] {prefix}: {}", self.project_slug, self.issue_title),
+        }
     }
 }
 
@@ -217,11 +231,35 @@ mod tests {
             environment: None,
             release: None,
             link: "http://localhost/issues/7".into(),
+            current_hour: None,
+            baseline_per_hour: None,
         };
         let s = n.subject();
         assert!(s.contains("demo"));
         assert!(s.contains("new issue"));
         assert!(s.contains("TypeError: x"));
+    }
+
+    #[test]
+    fn spike_subject_includes_rate() {
+        let n = Notification {
+            kind: Kind::Spike,
+            project_name: "Demo".into(),
+            project_slug: "demo".into(),
+            issue_id: 7,
+            issue_title: "TypeError: x".into(),
+            event_count: 30,
+            level: Some("error".into()),
+            environment: None,
+            release: None,
+            link: "http://localhost/issues/7".into(),
+            current_hour: Some(30),
+            baseline_per_hour: Some(0.22),
+        };
+        let s = n.subject();
+        assert!(s.contains("🔥 spike"), "got {s}");
+        assert!(s.contains("30/h"));
+        assert!(s.contains("0.2/h"));
     }
 
     #[test]
