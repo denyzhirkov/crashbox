@@ -280,9 +280,15 @@ function EventBody(props: { detail: EventDetail; issue: Issue }) {
           <div class="flex flex-wrap gap-2">
             <For each={tags()}>
               {([k, v]) => (
-                <span class="text-[12px] border border-ink-600 px-2 py-[2px]">
+                <A
+                  href={`/projects/${props.issue.project_id}/issues?tag=${encodeURIComponent(
+                    k + '=' + v,
+                  )}`}
+                  class="text-[12px] border border-ink-600 px-2 py-[2px] hover:border-crash hover:text-crash"
+                  title="filter issues by this tag"
+                >
                   <span class="text-ink-400">{k}:</span> {v}
-                </span>
+                </A>
               )}
             </For>
           </div>

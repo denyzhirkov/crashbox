@@ -43,6 +43,9 @@ pub struct IssueFilters {
     pub environment: Option<String>,
     pub release: Option<String>,
     pub query: Option<String>,
+    /// Each entry is a `(key, value)` pair from `?tag=key=value`. Multiple tags are ANDed:
+    /// an issue must have *some* event matching every requested (key, value).
+    pub tags: Vec<(String, String)>,
     pub limit: i64,
     pub offset: i64,
 }
@@ -115,6 +118,20 @@ pub async fn list(
         // Case-insensitive substring match on the issue title.
         qb.push(" AND issues.title LIKE ");
         qb.push_bind(format!("%{q}%"));
+    }
+    // Tag filters: AND-of-EXISTS. Each tag must match some event of the issue. The subquery
+    // hits idx_event_tags_key_value, then joins events on event_id for the issue_id link.
+    for (k, v) in &f.tags {
+        qb.push(
+            " AND EXISTS (\
+                SELECT 1 FROM event_tags et \
+                JOIN events e ON e.id = et.event_id \
+                WHERE e.issue_id = issues.id AND et.key = ",
+        );
+        qb.push_bind(k.clone());
+        qb.push(" AND et.value = ");
+        qb.push_bind(v.clone());
+        qb.push(")");
     }
     qb.push(" ORDER BY issues.last_seen DESC LIMIT ");
     qb.push_bind(f.limit.clamp(1, 500));

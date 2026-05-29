@@ -61,11 +61,13 @@ export const api = {
       req<DsnInfo>(`/api/projects/${id}/rotate-key`, { method: 'POST' }),
   },
   issues: {
-    list: (projectId: number, filters: IssueFilters = {}) => {
+    list: (projectId: number, filters: IssueFilters = {}, tags: Array<[string, string]> = []) => {
       const qs = new URLSearchParams()
       for (const [k, v] of Object.entries(filters)) {
         if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
       }
+      // ?tag=key=value can repeat — URLSearchParams.append handles that.
+      for (const [k, v] of tags) qs.append('tag', `${k}=${v}`)
       const suffix = qs.toString() ? `?${qs}` : ''
       return req<Issue[]>(`/api/projects/${projectId}/issues${suffix}`)
     },

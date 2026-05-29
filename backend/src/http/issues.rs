@@ -1,4 +1,4 @@
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, Query, RawQuery, State};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::Value;
@@ -26,6 +26,48 @@ pub struct IssueListQuery {
     pub offset: Option<i64>,
 }
 
+/// `?tag=k=v` can appear multiple times. `serde_urlencoded` (axum's default) doesn't decode
+/// repeated keys into a Vec, so we extract them from the raw query string instead.
+fn parse_tag_query(raw: Option<&str>) -> Vec<(String, String)> {
+    let Some(raw) = raw else {
+        return Vec::new();
+    };
+    raw.split('&')
+        .filter_map(|p| {
+            let v = p.strip_prefix("tag=")?;
+            // Both keys and values may be URL-encoded. Decode once, then split on the
+            // FIRST '=' so values containing '=' stay intact.
+            let decoded = percent_decode(v);
+            let (k, val) = decoded.split_once('=')?;
+            Some((k.to_string(), val.to_string()))
+        })
+        .collect()
+}
+
+fn percent_decode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                if let Ok(b) = u8::from_str_radix(hex, 16) {
+                    out.push(b as char);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        if bytes[i] == b'+' {
+            out.push(' ');
+        } else {
+            out.push(bytes[i] as char);
+        }
+        i += 1;
+    }
+    out
+}
+
 #[derive(Debug, Deserialize)]
 pub struct PatchIssue {
     /// "resolved" or "unresolved". Optional — a request can change only the snooze.
@@ -42,13 +84,16 @@ pub async fn list(
     State(state): State<AppState>,
     Path(project_id): Path<i64>,
     Query(q): Query<IssueListQuery>,
+    RawQuery(raw): RawQuery,
 ) -> AppResult<Json<Vec<issues::IssueWithSparkline>>> {
+    let tags = parse_tag_query(raw.as_deref());
     let filters = issues::IssueFilters {
         status: q.status,
         level: q.level,
         environment: q.environment,
         release: q.release,
         query: q.query,
+        tags,
         limit: q.limit.unwrap_or(50),
         offset: q.offset.unwrap_or(0),
     };

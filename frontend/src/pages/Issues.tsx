@@ -1,4 +1,4 @@
-import { A, useNavigate, useParams } from '@solidjs/router'
+import { A, useNavigate, useParams, useSearchParams } from '@solidjs/router'
 import {
   createEffect,
   createResource,
@@ -11,6 +11,7 @@ import { api } from '../api/client'
 import type { Issue } from '../api/types'
 import { EdgeBar } from '../components/EdgeBar'
 import { Sparkline } from '../components/Sparkline'
+import { loadViews, removeView, saveView, type SavedView } from '../lib/saved-views'
 import { relTime } from '../lib/time'
 
 type StatusFilter = 'unresolved' | 'resolved' | 'snoozed' | 'all'
@@ -18,13 +19,54 @@ type StatusFilter = 'unresolved' | 'resolved' | 'snoozed' | 'all'
 export default function IssuesPage() {
   const params = useParams<{ projectId: string }>()
   const projectId = () => Number(params.projectId)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const initialTagsFromUrl = (): Array<[string, string]> => {
+    const raw = searchParams.tag
+    const all = Array.isArray(raw) ? raw : raw ? [raw] : []
+    return all.flatMap<[string, string]>((p) => {
+      const idx = (p as string).indexOf('=')
+      return idx > 0 ? [[(p as string).slice(0, idx), (p as string).slice(idx + 1)]] : []
+    })
+  }
+
   const [query, setQuery] = createSignal('')
   const [status, setStatus] = createSignal<StatusFilter>('unresolved')
+  const [tags, setTags] = createSignal<Array<[string, string]>>(initialTagsFromUrl())
   const [project] = createResource(projectId, (id) => api.projects.get(id))
   const [issues, { refetch }] = createResource(
-    () => ({ pid: projectId(), q: query(), s: status() }),
-    ({ pid, q, s }) => api.issues.list(pid, { query: q || undefined, status: s }),
+    () => ({ pid: projectId(), q: query(), s: status(), t: tags() }),
+    ({ pid, q, s, t }) => api.issues.list(pid, { query: q || undefined, status: s }, t),
   )
+
+  // Saved views (localStorage). Mutates trigger re-read.
+  const [views, setViews] = createSignal<SavedView[]>(loadViews(projectId()))
+  createEffect(() => setViews(loadViews(projectId())))
+
+  const removeTag = (idx: number) => setTags((t) => t.filter((_, i) => i !== idx))
+
+  const applyView = (v: SavedView) => {
+    setStatus((v.filters.status as StatusFilter) ?? 'unresolved')
+    setQuery(v.filters.query ?? '')
+    setTags(v.tags)
+  }
+  const persistViews = (next: SavedView[]) => setViews(next)
+  const saveCurrent = () => {
+    const name = window.prompt('// name this view')
+    if (!name) return
+    const view: SavedView = {
+      id: crypto.randomUUID(),
+      name,
+      filters: { status: status(), query: query() || undefined },
+      tags: tags(),
+    }
+    saveView(projectId(), view)
+    persistViews(loadViews(projectId()))
+  }
+  const deleteView = (id: string) => {
+    removeView(projectId(), id)
+    persistViews(loadViews(projectId()))
+  }
 
   // j/k keyboard nav
   const [cursor, setCursor] = createSignal(0)
@@ -51,7 +93,17 @@ export default function IssuesPage() {
   createEffect(() => {
     query()
     status()
+    tags()
     setCursor(0)
+  })
+
+  // Mirror tags to URL so links/back-button share filters.
+  createEffect(() => {
+    const t = tags()
+    setSearchParams(
+      { tag: t.map(([k, v]) => `${k}=${v}`) },
+      { replace: true },
+    )
   })
 
   return (
@@ -90,6 +142,52 @@ export default function IssuesPage() {
           title="refresh"
         >
           ↻
+        </button>
+      </div>
+
+      <Show when={tags().length > 0}>
+        <div class="flex flex-wrap gap-1.5 text-[11px]">
+          <For each={tags()}>
+            {([k, v], i) => (
+              <button
+                onClick={() => removeTag(i())}
+                class="px-2 py-[2px] border border-crash text-crash hover:bg-crash/10"
+                title="click to remove"
+              >
+                {k}:{v} ×
+              </button>
+            )}
+          </For>
+          <button
+            onClick={() => setTags([])}
+            class="px-2 py-[2px] text-ink-400 hover:text-ink-100"
+          >
+            clear all
+          </button>
+        </div>
+      </Show>
+
+      <div class="flex flex-wrap gap-1.5 text-[11px] items-center">
+        <For each={views()}>
+          {(v) => (
+            <button
+              onClick={() => applyView(v)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                if (window.confirm(`// delete view "${v.name}"?`)) deleteView(v.id)
+              }}
+              class="px-2 py-[2px] border border-ink-600 text-ink-300 hover:border-ink-400 hover:text-ink-100"
+              title="click to apply · right-click to delete"
+            >
+              ★ {v.name}
+            </button>
+          )}
+        </For>
+        <button
+          onClick={saveCurrent}
+          class="text-ink-500 hover:text-ink-100"
+        >
+          + save view
         </button>
       </div>
 
