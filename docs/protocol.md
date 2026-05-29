@@ -165,6 +165,19 @@ If an event lands on an issue whose status is `resolved`, the status flips back 
 in the same transaction as the event insert. A `reopened` notification fires (see
 `docs/configuration.md` → Notifications).
 
+### Snooze
+
+Issues can be muted via `PATCH /api/issues/:id` with body `{snooze: "1h" | "1d" | "1w" |
+"forever" | "wake"}`. Stored in `issues.snoozed_until`:
+
+- `NULL` — not snoozed
+- `'forever'` — silenced until the next ingested event on this fingerprint **auto-wakes** it
+- `'<RFC-3339 timestamp>'` — silenced until that UTC instant
+
+Currently-snoozed issues are excluded from the default `unresolved` list and from the
+projects-overview "recent issues" block. They surface under `?status=snoozed`. `?status=all`
+returns everything regardless.
+
 ---
 
 ## What we do NOT implement

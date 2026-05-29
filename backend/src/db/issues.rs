@@ -16,6 +16,12 @@ pub struct Issue {
     pub last_event_id: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spike_alerted_at: Option<String>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -41,6 +47,7 @@ pub async fn list(
     project_id: i64,
     f: &IssueFilters,
 ) -> sqlx::Result<Vec<Issue>> {
+    let now_iso = Utc::now().to_rfc3339();
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
         "SELECT DISTINCT issues.* FROM issues ",
     );
@@ -51,11 +58,33 @@ pub async fn list(
     qb.push("WHERE issues.project_id = ");
     qb.push_bind(project_id);
 
+    // Status semantics:
+    //   unresolved (default): status='unresolved' AND NOT currently snoozed
+    //   resolved:             status='resolved'
+    //   snoozed:              currently snoozed (forever OR future timestamp)
+    //   all:                  no status / snooze filter at all
     match f.status.as_deref() {
-        Some("all") | None => {}
+        Some("all") => {}
+        Some("snoozed") => {
+            qb.push(" AND (issues.snoozed_until = 'forever' OR issues.snoozed_until > ");
+            qb.push_bind(now_iso.clone());
+            qb.push(")");
+        }
         Some(s) => {
             qb.push(" AND issues.status = ");
             qb.push_bind(s.to_string());
+            // Hide currently-snoozed when looking at "unresolved" view.
+            if s == "unresolved" {
+                qb.push(" AND (issues.snoozed_until IS NULL OR (issues.snoozed_until != 'forever' AND issues.snoozed_until <= ");
+                qb.push_bind(now_iso.clone());
+                qb.push("))");
+            }
+        }
+        None => {
+            qb.push(" AND issues.status = 'unresolved'");
+            qb.push(" AND (issues.snoozed_until IS NULL OR (issues.snoozed_until != 'forever' AND issues.snoozed_until <= ");
+            qb.push_bind(now_iso.clone());
+            qb.push("))");
         }
     }
     if let Some(level) = &f.level {
@@ -94,6 +123,26 @@ pub async fn set_status(pool: &SqlitePool, id: i64, status: &str) -> sqlx::Resul
     Ok(result.rows_affected())
 }
 
+/// `snoozed_until` accepts:
+/// - `None` to clear the snooze (i.e. wake the issue)
+/// - `Some("forever")` to snooze until the next ingested event
+/// - `Some("<rfc3339>")` for a time-bound snooze
+pub async fn set_snooze(
+    pool: &SqlitePool,
+    id: i64,
+    snoozed_until: Option<&str>,
+) -> sqlx::Result<u64> {
+    let now = Utc::now().to_rfc3339();
+    let result =
+        sqlx::query("UPDATE issues SET snoozed_until = ?, updated_at = ? WHERE id = ?")
+            .bind(snoozed_until)
+            .bind(&now)
+            .bind(id)
+            .execute(pool)
+            .await?;
+    Ok(result.rows_affected())
+}
+
 /// What happened during [`upsert`]. The notify hub keys notifications off this:
 /// - `Created` → fire `NewIssue` alert
 /// - `Reopened` → fire `Reopened` alert (we auto-flipped status back to `unresolved`)
@@ -118,17 +167,29 @@ pub async fn upsert(
     platform: Option<&str>,
     timestamp_iso: &str,
 ) -> sqlx::Result<(i64, UpsertOutcome)> {
-    let existing: Option<(i64, String)> = sqlx::query_as(
-        "SELECT id, status FROM issues WHERE project_id = ? AND fingerprint = ?",
+    let existing: Option<(i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, status, snoozed_until FROM issues \
+         WHERE project_id = ? AND fingerprint = ?",
     )
     .bind(project_id)
     .bind(fingerprint)
     .fetch_optional(&mut *conn)
     .await?;
 
-    if let Some((id, status)) = existing {
+    if let Some((id, status, snoozed_until)) = existing {
+        let now = Utc::now().to_rfc3339();
+        // Auto-wake forever-snooze: the user's intent was "shut up until the next crash".
+        // Time-bounded snoozes stay in place; the list query will surface them naturally
+        // once their timestamp passes.
+        if snoozed_until.as_deref() == Some("forever") {
+            sqlx::query("UPDATE issues SET snoozed_until = NULL, updated_at = ? WHERE id = ?")
+                .bind(&now)
+                .bind(id)
+                .execute(&mut *conn)
+                .await?;
+        }
+
         if status == "resolved" {
-            let now = Utc::now().to_rfc3339();
             sqlx::query(
                 "UPDATE issues SET status = 'unresolved', updated_at = ? WHERE id = ?",
             )

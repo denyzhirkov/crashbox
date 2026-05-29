@@ -30,6 +30,8 @@ export type Issue = {
   last_event_id: number | null
   created_at: string
   updated_at: string
+  spike_alerted_at?: string | null
+  snoozed_until?: string | null
 }
 
 export type EventRow = {
@@ -75,7 +77,7 @@ export type ProjectOverview = Project & {
 }
 
 export type IssueFilters = {
-  status?: 'unresolved' | 'resolved' | 'all'
+  status?: 'unresolved' | 'resolved' | 'snoozed' | 'all'
   level?: string
   environment?: string
   release?: string
@@ -83,3 +85,5 @@ export type IssueFilters = {
   limit?: number
   offset?: number
 }
+
+export type SnoozeAction = '1h' | '1d' | '1w' | 'forever' | 'wake'

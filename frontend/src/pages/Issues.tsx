@@ -12,7 +12,7 @@ import type { Issue } from '../api/types'
 import { EdgeBar } from '../components/EdgeBar'
 import { relTime } from '../lib/time'
 
-type StatusFilter = 'unresolved' | 'resolved' | 'all'
+type StatusFilter = 'unresolved' | 'resolved' | 'snoozed' | 'all'
 
 export default function IssuesPage() {
   const params = useParams<{ projectId: string }>()
@@ -81,6 +81,7 @@ export default function IssuesPage() {
         />
         <StatusChip current={status()} value="unresolved" set={setStatus} />
         <StatusChip current={status()} value="resolved" set={setStatus} />
+        <StatusChip current={status()} value="snoozed" set={setStatus} />
         <StatusChip current={status()} value="all" set={setStatus} />
         <button
           class="text-ink-400 hover:text-ink-100"

@@ -75,6 +75,11 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       }),
+    snooze: (id: number, action: '1h' | '1d' | '1w' | 'forever' | 'wake') =>
+      req<Issue>(`/api/issues/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ snooze: action }),
+      }),
     events: (id: number, limit = 50, offset = 0) =>
       req<EventRow[]>(`/api/issues/${id}/events?limit=${limit}&offset=${offset}`),
   },

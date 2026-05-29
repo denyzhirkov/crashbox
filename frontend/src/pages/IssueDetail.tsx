@@ -42,6 +42,22 @@ export default function IssueDetailPage() {
     refetchIssue()
   }
 
+  const [showSnoozeMenu, setShowSnoozeMenu] = createSignal(false)
+  const snooze = async (action: '1h' | '1d' | '1w' | 'forever' | 'wake') => {
+    const i = issue()
+    if (!i) return
+    await api.issues.snooze(i.id, action)
+    setShowSnoozeMenu(false)
+    refetchIssue()
+  }
+
+  const isSnoozed = () => {
+    const i = issue()
+    if (!i?.snoozed_until) return false
+    if (i.snoozed_until === 'forever') return true
+    return Date.parse(i.snoozed_until) > Date.now()
+  }
+
   return (
     <article class="flex flex-col gap-6">
       <Show when={issue()} fallback={<p class="text-ink-400 text-[12px]">// loading…</p>}>
@@ -72,12 +88,69 @@ export default function IssueDetailPage() {
                     <span>· {i().status}</span>
                   </p>
                 </div>
-                <button
-                  onClick={toggleStatus}
-                  class="text-[12px] border border-ink-600 px-3 py-1 hover:border-crash hover:text-crash"
-                >
-                  {i().status === 'resolved' ? 'reopen' : 'mark fixed'}
-                </button>
+                <div class="flex gap-2 items-start">
+                  <div class="relative">
+                    <button
+                      onClick={() => setShowSnoozeMenu(!showSnoozeMenu())}
+                      class={`text-[12px] border px-3 py-1 ${
+                        isSnoozed()
+                          ? 'border-warn text-warn'
+                          : 'border-ink-600 hover:border-ink-400 text-ink-200'
+                      }`}
+                      title={
+                        isSnoozed()
+                          ? `snoozed until ${i().snoozed_until}`
+                          : 'silence alerts for this issue'
+                      }
+                    >
+                      {isSnoozed() ? 'snoozed ▾' : 'snooze ▾'}
+                    </button>
+                    <Show when={showSnoozeMenu()}>
+                      <div class="absolute right-0 top-full mt-1 border border-ink-600 bg-ink-800 z-10 min-w-[180px] text-[12px]">
+                        <Show when={isSnoozed()}>
+                          <button
+                            onClick={() => snooze('wake')}
+                            class="w-full text-left px-3 py-1.5 hover:bg-ink-700 text-crash"
+                          >
+                            wake now
+                          </button>
+                          <div class="border-t border-ink-600" />
+                        </Show>
+                        <button
+                          onClick={() => snooze('1h')}
+                          class="w-full text-left px-3 py-1.5 hover:bg-ink-700"
+                        >
+                          1 hour
+                        </button>
+                        <button
+                          onClick={() => snooze('1d')}
+                          class="w-full text-left px-3 py-1.5 hover:bg-ink-700"
+                        >
+                          1 day
+                        </button>
+                        <button
+                          onClick={() => snooze('1w')}
+                          class="w-full text-left px-3 py-1.5 hover:bg-ink-700"
+                        >
+                          1 week
+                        </button>
+                        <button
+                          onClick={() => snooze('forever')}
+                          class="w-full text-left px-3 py-1.5 hover:bg-ink-700 text-ink-300"
+                          title="silenced until the next event"
+                        >
+                          until next crash
+                        </button>
+                      </div>
+                    </Show>
+                  </div>
+                  <button
+                    onClick={toggleStatus}
+                    class="text-[12px] border border-ink-600 px-3 py-1 hover:border-crash hover:text-crash"
+                  >
+                    {i().status === 'resolved' ? 'reopen' : 'mark fixed'}
+                  </button>
+                </div>
               </div>
             </header>
 

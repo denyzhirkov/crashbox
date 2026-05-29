@@ -28,7 +28,12 @@ pub struct IssueListQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct PatchIssue {
-    pub status: String,
+    /// "resolved" or "unresolved". Optional — a request can change only the snooze.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Snooze action: "1h" | "1d" | "1w" | "forever" | "wake". Optional.
+    #[serde(default)]
+    pub snooze: Option<String>,
 }
 
 /// GET /api/projects/:project_id/issues
@@ -69,18 +74,66 @@ pub async fn patch(
     Path(id): Path<i64>,
     Json(body): Json<PatchIssue>,
 ) -> AppResult<Json<issues::Issue>> {
-    let normalized = match body.status.as_str() {
-        "resolved" | "unresolved" => body.status,
-        _ => return Err(AppError::BadRequest("status must be resolved or unresolved".into())),
-    };
-    let affected = issues::set_status(&state.db, id, &normalized).await?;
-    if affected == 0 {
-        return Err(AppError::NotFound);
+    if body.status.is_none() && body.snooze.is_none() {
+        return Err(AppError::BadRequest("status or snooze required".into()));
     }
+
+    if let Some(status) = &body.status {
+        let normalized = match status.as_str() {
+            "resolved" | "unresolved" => status,
+            _ => {
+                return Err(AppError::BadRequest(
+                    "status must be resolved or unresolved".into(),
+                ));
+            }
+        };
+        let affected = issues::set_status(&state.db, id, normalized).await?;
+        if affected == 0 {
+            return Err(AppError::NotFound);
+        }
+    }
+
+    if let Some(snooze) = &body.snooze {
+        let snoozed_until = match parse_snooze(snooze) {
+            Some(v) => v,
+            None => {
+                return Err(AppError::BadRequest(format!(
+                    "snooze must be one of 1h, 1d, 1w, forever, wake; got {snooze:?}"
+                )));
+            }
+        };
+        let affected = issues::set_snooze(&state.db, id, snoozed_until.as_deref()).await?;
+        if affected == 0 {
+            return Err(AppError::NotFound);
+        }
+    }
+
     let issue = issues::find_by_id(&state.db, id)
         .await?
         .ok_or(AppError::NotFound)?;
     Ok(Json(issue))
+}
+
+/// Returns the value to store in `snoozed_until`:
+/// - `Some(Some("forever"))` — forever-snooze
+/// - `Some(Some("<rfc3339>"))` — time-bound snooze
+/// - `Some(None)` — wake (clear snoozed_until)
+/// - `None` — invalid input
+fn parse_snooze(s: &str) -> Option<Option<String>> {
+    match s {
+        "wake" => Some(None),
+        "forever" => Some(Some("forever".to_string())),
+        "1h" => Some(Some(
+            (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
+        )),
+        "1d" => Some(Some(
+            (chrono::Utc::now() + chrono::Duration::days(1)).to_rfc3339(),
+        )),
+        "1w" => Some(Some(
+            (chrono::Utc::now() + chrono::Duration::days(7)).to_rfc3339(),
+        )),
+        _ => None,
+    }
 }
 
 /// GET /api/issues/:id/events
