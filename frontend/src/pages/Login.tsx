@@ -1,6 +1,8 @@
 import { useNavigate } from '@solidjs/router'
 import { createSignal, Show } from 'solid-js'
 import { api, ApiError } from '../api/client'
+import { Wordmark } from '../components/layout'
+import { Voice } from '../components/primitives'
 import { useAuth } from '../lib/auth-context'
 
 export default function LoginPage() {
@@ -20,63 +22,60 @@ export default function LoginPage() {
       refresh()
       nav('/projects', { replace: true })
     } catch (err) {
-      if (err instanceof ApiError) setError(err.message)
-      else setError('unexpected error')
+      if (err instanceof ApiError) setError(`// ${err.message}`)
+      else setError('// auth failed. check email + password.')
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div class="min-h-full flex items-center justify-center px-6">
-      <form
-        onSubmit={onSubmit}
-        class="w-[360px] flex flex-col gap-4 border border-ink-600 bg-ink-700/40 p-8 rounded-sm"
-      >
-        <div class="mb-2">
-          <h1 class="font-serif text-[36px] text-ink-50 tracking-tight leading-none">
-            crashbox
-          </h1>
-          <p class="text-[12px] text-ink-300 mt-1">// sign in to continue</p>
+    <div style={{ display: 'flex', 'min-height': '100vh', 'justify-content': 'center', 'align-items': 'center', padding: '24px' }}>
+      <form onSubmit={onSubmit} class="card" style={{ width: '372px', padding: '28px', position: 'relative' }}>
+        <div style={{ 'margin-bottom': '22px' }}>
+          <Wordmark href="/projects" />
         </div>
+        <Voice style={{ 'margin-bottom': '20px' }}>sign in to continue</Voice>
 
-        <label class="flex flex-col gap-1">
-          <span class="text-[11px] text-ink-300">email</span>
-          <input
-            type="email"
-            value={email()}
-            onInput={(e) => setEmail(e.currentTarget.value)}
-            autocomplete="username"
-            required
-            class="bg-ink-800 border border-ink-600 px-3 py-2 text-ink-100 focus:border-crash focus:outline-none"
-          />
+        <label style={{ display: 'flex', 'flex-direction': 'column', gap: '6px', 'margin-bottom': '14px' }}>
+          <span class="mono" style={{ 'font-size': '11px', color: 'var(--text-lo)', 'letter-spacing': '0.04em' }}>email</span>
+          <span class="field cb-focusring" style={{ 'border-radius': 'var(--r-md)' }}>
+            <input
+              class="input mono"
+              type="email"
+              value={email()}
+              onInput={(e) => setEmail(e.currentTarget.value)}
+              autocomplete="username"
+              spellcheck={false}
+              required
+            />
+          </span>
         </label>
 
-        <label class="flex flex-col gap-1">
-          <span class="text-[11px] text-ink-300">password</span>
-          <input
-            type="password"
-            value={password()}
-            onInput={(e) => setPassword(e.currentTarget.value)}
-            autocomplete="current-password"
-            required
-            class="bg-ink-800 border border-ink-600 px-3 py-2 text-ink-100 focus:border-crash focus:outline-none"
-          />
+        <label style={{ display: 'flex', 'flex-direction': 'column', gap: '6px', 'margin-bottom': error() ? '10px' : '22px' }}>
+          <span class="mono" style={{ 'font-size': '11px', color: 'var(--text-lo)', 'letter-spacing': '0.04em' }}>password</span>
+          <span class="field cb-focusring" style={{ 'border-radius': 'var(--r-md)' }}>
+            <input
+              class="input mono"
+              type="password"
+              value={password()}
+              onInput={(e) => setPassword(e.currentTarget.value)}
+              autocomplete="current-password"
+              required
+            />
+          </span>
         </label>
 
         <Show when={error()}>
-          {(msg) => (
-            <p class="text-[12px] text-crash">// {msg()}</p>
-          )}
+          {(msg) => <div class="mono" style={{ 'font-size': '12px', color: 'var(--sev-error)', 'margin-bottom': '16px' }}>{msg()}</div>}
         </Show>
 
-        <button
-          type="submit"
-          disabled={busy()}
-          class="mt-2 bg-crash text-ink-50 px-3 py-2 hover:bg-crash-dim disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {busy() ? 'unlocking…' : 'unlock'}
+        <button type="submit" class={`btn primary ${busy() ? 'loading' : ''}`} style={{ width: '100%', height: '40px', 'justify-content': 'center' }}>
+          unlock
         </button>
+        <div style={{ display: 'flex', 'justify-content': 'center', 'margin-top': '16px' }}>
+          <span class="mono" style={{ 'font-size': '11px', color: 'var(--text-faint)' }}>crashbox · self-hosted</span>
+        </div>
       </form>
     </div>
   )

@@ -1,6 +1,8 @@
-import { A, useParams } from '@solidjs/router'
+import { useParams } from '@solidjs/router'
 import { createResource, createSignal, Show } from 'solid-js'
 import { api } from '../api/client'
+import { Breadcrumb, Page } from '../components/layout'
+import { CopyBlock, PlatformTag } from '../components/primitives'
 import { useAuth } from '../lib/auth-context'
 
 export default function SettingsPage() {
@@ -11,7 +13,6 @@ export default function SettingsPage() {
   const [confirming, setConfirming] = createSignal(false)
   const [rotating, setRotating] = createSignal(false)
   const { user } = useAuth()
-  const [copied, setCopied] = createSignal(false)
 
   const rotate = async () => {
     setRotating(true)
@@ -24,88 +25,80 @@ export default function SettingsPage() {
     }
   }
 
-  const copyDsn = async () => {
-    const d = dsn()
-    if (!d) return
-    try {
-      await navigator.clipboard.writeText(d.dsn)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      /* clipboard blocked */
-    }
-  }
-
   return (
-    <section class="flex flex-col gap-6 max-w-[720px]">
-      <header class="flex items-baseline gap-3">
-        <A href="/projects" class="text-ink-400 hover:text-ink-100 text-[12px]">
-          projects
-        </A>
-        <span class="text-ink-500">/</span>
-        <A
-          href={`/projects/${projectId()}/issues`}
-          class="text-ink-400 hover:text-ink-100 text-[12px]"
-        >
-          {project()?.name ?? '…'}
-        </A>
-        <span class="text-ink-500">/</span>
-        <h1 class="font-serif text-[20px] text-ink-50 leading-none">settings</h1>
-      </header>
+    <Page>
+      <Breadcrumb
+        items={[
+          { label: 'projects', href: '/projects' },
+          { label: project()?.name ?? '…', href: `/projects/${projectId()}/issues` },
+          { label: 'settings' },
+        ]}
+      />
 
-      <div class="flex flex-col gap-2">
-        <p class="text-[11px] text-ink-400">// dsn</p>
-        <Show when={dsn()}>
-          {(d) => (
-            <button
-              onClick={copyDsn}
-              class={`text-left text-[13px] font-mono px-3 py-2 bg-ink-700/40 border border-ink-600 hover:border-ink-400 ${
-                copied() ? 'underline decoration-crash decoration-2 underline-offset-4' : ''
-              }`}
-              title="click to copy"
-            >
-              {d().dsn}
-            </button>
-          )}
+      <h1 class="mono" style={{ 'font-size': '22px', 'font-weight': 600, 'margin-bottom': '4px' }}>{project()?.name ?? '…'}</h1>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', 'margin-bottom': '28px' }}>
+        <span class="mono" style={{ 'font-size': '12.5px', color: 'var(--text-faint)' }}>{project()?.slug}</span>
+        <Show when={project()?.platform}>
+          <span style={{ color: 'var(--text-faint)', opacity: 0.4 }}>·</span>
+          <PlatformTag platform={project()?.platform} />
         </Show>
-        <p class="text-[11px] text-ink-400">public_key: {dsn()?.public_key}</p>
+      </div>
+
+      <div class="card" style={{ padding: '24px', 'margin-bottom': '16px' }}>
+        <Field label="DSN" hint="point your SDK here">
+          <Show when={dsn()} fallback={<div class="skel" style={{ height: '48px' }} />}>
+            {(d) => <CopyBlock value={d().dsn} big />}
+          </Show>
+        </Field>
+        <Field label="public key">
+          <div class="codeblk" style={{ padding: '10px 12px', 'font-size': '12.5px', color: 'var(--text-mid)' }}>{dsn()?.public_key ?? '…'}</div>
+        </Field>
+        <Field label="project id">
+          <div class="codeblk" style={{ padding: '10px 12px', 'font-size': '12.5px', color: 'var(--text-mid)' }}>{project()?.id ?? '…'}</div>
+        </Field>
       </div>
 
       <Show when={user()?.is_admin}>
-        <div class="flex flex-col gap-2 border-t border-ink-600 pt-6">
-          <p class="text-[11px] text-ink-400">// rotate key</p>
-          <Show
-            when={confirming()}
-            fallback={
-              <button
-                onClick={() => setConfirming(true)}
-                class="self-start text-[12px] border border-ink-600 px-3 py-1 hover:border-crash hover:text-crash"
-              >
-                rotate
-              </button>
-            }
-          >
-            <p class="text-[12px] text-ink-200">
-              // this invalidates the current DSN. SDKs using the old key will get 401.
-            </p>
-            <div class="flex gap-2">
-              <button
-                onClick={rotate}
-                disabled={rotating()}
-                class="bg-crash text-ink-50 px-3 py-1 hover:bg-crash-dim disabled:opacity-50"
-              >
-                {rotating() ? 'rotating…' : 'confirm rotate'}
-              </button>
-              <button
-                onClick={() => setConfirming(false)}
-                class="border border-ink-600 px-3 py-1 hover:border-ink-400"
-              >
-                cancel
-              </button>
+        <div class="card" style={{ padding: '24px', 'border-color': confirming() ? 'oklch(0.690 0.150 45 / 0.3)' : 'var(--line)' }}>
+          <div style={{ display: 'flex', 'align-items': 'flex-start', 'justify-content': 'space-between' }}>
+            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
+              <span class="mono" style={{ 'font-size': '13.5px', 'font-weight': 600, color: 'var(--text-hi)' }}>rotate key</span>
+              <span class="mono" style={{ 'font-size': '12px', color: 'var(--text-lo)', 'max-width': '460px' }}>
+                generate a new public key. the current DSN stops working immediately.
+              </span>
+            </div>
+            <Show when={!confirming()}>
+              <button class="btn danger sm" onClick={() => setConfirming(true)}>rotate</button>
+            </Show>
+          </div>
+
+          <Show when={confirming()}>
+            <div style={{ 'margin-top': '18px', 'padding-top': '18px', 'border-top': '1px solid var(--line-soft)' }}>
+              <div class="mono" style={{ 'font-size': '12.5px', color: 'var(--sev-error)', 'margin-bottom': '14px', 'line-height': 1.5 }}>
+                // this invalidates the current DSN. SDKs using the old key will get 401.
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button class={`btn danger solid sm ${rotating() ? 'loading' : ''}`} onClick={rotate} style={{ position: 'relative' }}>confirm rotate</button>
+                <button class="btn ghost sm" onClick={() => setConfirming(false)} disabled={rotating()}>cancel</button>
+              </div>
             </div>
           </Show>
         </div>
       </Show>
-    </section>
+    </Page>
+  )
+}
+
+function Field(props: { label: string; hint?: string; children: any }) {
+  return (
+    <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px', 'margin-bottom': '22px' }}>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+        <span class="mono" style={{ 'font-size': '11.5px', color: 'var(--text-lo)', 'letter-spacing': '0.04em', 'text-transform': 'uppercase' }}>{props.label}</span>
+        <Show when={props.hint}>
+          <span class="mono" style={{ 'font-size': '11px', color: 'var(--text-faint)' }}>{props.hint}</span>
+        </Show>
+      </div>
+      {props.children}
+    </div>
   )
 }

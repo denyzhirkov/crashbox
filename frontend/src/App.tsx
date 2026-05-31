@@ -41,7 +41,7 @@ export default function App() {
           path="*"
           component={() => (
             <Shell>
-              <div class="text-ink-300 text-[12px]">// not found</div>
+              <div class="voice" style={{ padding: '36px 24px' }}><span class="pfx">// </span>not found</div>
             </Shell>
           )}
         />

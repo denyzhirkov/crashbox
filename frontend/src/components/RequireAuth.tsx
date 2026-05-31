@@ -15,7 +15,7 @@ export function RequireAuth(props: { children: JSX.Element }) {
   return (
     <Switch>
       <Match when={user.loading}>
-        <div class="p-8 text-ink-400 text-[12px]">// loading…</div>
+        <div class="voice" style={{ padding: '32px' }}><span class="pfx">// </span>loading…</div>
       </Match>
       <Match when={user() === null}>
         <div />

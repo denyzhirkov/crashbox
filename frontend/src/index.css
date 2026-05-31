@@ -1,63 +1,265 @@
 @import "tailwindcss";
 
+/* self-hosted fonts (no runtime CDN) — Geist Sans for UI, JetBrains Mono for machine data */
+@import "@fontsource-variable/geist";
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
 @import "@fontsource/jetbrains-mono/700.css";
-@import "@fontsource/newsreader/400.css";
-@import "@fontsource/newsreader/500.css";
+
+/* ============================================================================
+   CRASHBOX — design tokens · dark-only · signal/aurora
+   one accent (violet→cyan) used as a signal, not a theme · small severity set
+   ========================================================================== */
 
 @theme {
-  --color-ink-50:  #f7f5ef;
-  --color-ink-100: #e9e6df;
-  --color-ink-200: #c9c5b9;
-  --color-ink-300: #8c8a82;
-  --color-ink-400: #5a5854;
-  --color-ink-500: #353438;
-  --color-ink-600: #26252d;
-  --color-ink-700: #1d1c23;
-  --color-ink-800: #15141a;
-  --color-ink-900: #0e0d12;
-
-  --color-crash: #e3402d;
-  --color-crash-dim: #b9352a;
-
-  --color-warn: #f0b400;
-  --color-info: #6c7ae0;
-
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  --font-serif: "Newsreader", ui-serif, Georgia, serif;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
-html, body, #root {
-  height: 100%;
+:root {
+  /* ---- neutral ramp · near-black, faintly warm (hue ~73, chroma ~0.006) ---- */
+  --bg-base:    oklch(0.166 0.006 73);
+  --bg-sunken:  oklch(0.139 0.006 73);
+  --bg-raised:  oklch(0.202 0.006 73);
+  --bg-raised2: oklch(0.234 0.006 73);
+  --bg-float:   oklch(0.224 0.007 73);
+
+  --glass:      oklch(0.235 0.007 73 / 0.62);
+  --glass-hi:   oklch(0.265 0.008 73 / 0.70);
+
+  --line:        oklch(1 0 0 / 0.07);
+  --line-soft:   oklch(1 0 0 / 0.045);
+  --line-strong: oklch(1 0 0 / 0.12);
+
+  --text-hi:    oklch(0.967 0.004 73);
+  --text:       oklch(0.842 0.004 73);
+  --text-mid:   oklch(0.688 0.004 73);
+  --text-lo:    oklch(0.548 0.004 73);
+  --text-faint: oklch(0.430 0.004 73);
+
+  /* ---- the one accent: violet → cyan ---- */
+  --accent-violet: oklch(0.635 0.196 286);
+  --accent-mid:    oklch(0.715 0.150 250);
+  --accent-cyan:   oklch(0.828 0.124 207);
+  --accent-grad:   linear-gradient(105deg, var(--accent-violet) 0%, var(--accent-mid) 52%, var(--accent-cyan) 100%);
+  --accent-grad-v: linear-gradient(180deg, var(--accent-violet) 0%, var(--accent-cyan) 100%);
+  --accent-ink:    oklch(0.760 0.150 268);
+  --accent-faint:  oklch(0.635 0.196 286 / 0.16);
+  --accent-glow:   oklch(0.660 0.190 280 / 0.40);
+
+  /* ---- severity · muted, deliberately not violet/cyan ---- */
+  --sev-fatal:   oklch(0.645 0.158 16);
+  --sev-error:   oklch(0.690 0.150 45);
+  --sev-warning: oklch(0.792 0.108 82);
+  --sev-info:    oklch(0.690 0.058 244);
+  --sev-debug:   oklch(0.600 0.013 264);
+
+  /* ---- type scale ---- */
+  --fs-11: 11px; --fs-12: 12px; --fs-13: 13px; --fs-14: 14px;
+  --fs-16: 16px; --fs-20: 20px; --fs-26: 26px; --fs-34: 34px;
+
+  /* ---- spacing ---- */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px;
+  --s-6: 24px; --s-8: 32px; --s-10: 40px; --s-12: 48px; --s-16: 64px;
+
+  /* ---- radii ---- */
+  --r-sm: 6px; --r-md: 9px; --r-lg: 13px; --r-xl: 18px; --r-full: 999px;
+
+  /* ---- elevation (light + 1px line, barely-there shadow) ---- */
+  --shadow-pop: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 18px 50px -18px oklch(0 0 0 / 0.7);
+  --glow-focus: 0 0 0 1px var(--accent-glow), 0 0 22px -6px var(--accent-glow);
+
+  --maxw: 1180px;
 }
 
+/* ===== reset / base ===================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; }
 body {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 14px;
+  background: var(--bg-base);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-14);
   line-height: 1.5;
-  background: var(--color-ink-800);
-  color: var(--color-ink-100);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-variant-numeric: tabular-nums;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv01";
+  /* subtle living backdrop — a single faint aurora bloom, NOT a wash */
+  background-image:
+    radial-gradient(900px 520px at 78% -8%, oklch(0.635 0.196 286 / 0.05), transparent 60%),
+    radial-gradient(760px 480px at 8% 108%, oklch(0.828 0.124 207 / 0.035), transparent 60%);
+  background-attachment: fixed;
+}
+::selection { background: oklch(0.660 0.190 280 / 0.32); color: var(--text-hi); }
+
+.mono { font-family: var(--font-mono); font-feature-settings: "zero", "ss02"; }
+.tnum { font-variant-numeric: tabular-nums; }
+h1, h2, h3, h4 { margin: 0; color: var(--text-hi); font-weight: 600; letter-spacing: -0.01em; }
+
+/* custom scrollbars */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: oklch(1 0 0 / 0.08); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: oklch(1 0 0 / 0.16); background-clip: content-box; }
+
+/* ===== focus: always the accent, never a default blue outline =========== */
+:focus { outline: none; }
+.cb-focusring { position: relative; }
+.cb-focusring::after {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit;
+  padding: 1px; background: var(--accent-grad);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: 0; transition: opacity 0.16s ease; pointer-events: none;
+}
+.cb-focusring:focus-within::after { opacity: 1; }
+.cb-focusring:focus-within { box-shadow: var(--glow-focus); }
+
+/* ===== buttons ========================================================== */
+.btn {
+  font-family: var(--font-sans); font-size: var(--fs-13); font-weight: 500;
+  line-height: 1; letter-spacing: 0.005em;
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  height: 34px; padding: 0 var(--s-4); border-radius: var(--r-md);
+  border: 1px solid var(--line); background: transparent; color: var(--text);
+  cursor: pointer; user-select: none; white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s, transform 0.08s;
+}
+.btn:hover { background: oklch(1 0 0 / 0.04); border-color: var(--line-strong); color: var(--text-hi); }
+.btn:active { transform: translateY(0.5px); }
+.btn:focus-visible { box-shadow: var(--glow-focus); border-color: transparent; }
+.btn[disabled] { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+.btn.sm { height: 28px; padding: 0 var(--s-3); font-size: var(--fs-12); }
+.btn.ghost { border-color: transparent; color: var(--text-mid); }
+.btn.ghost:hover { background: oklch(1 0 0 / 0.05); color: var(--text-hi); }
+
+/* primary — the single accent action per screen */
+.btn.primary {
+  position: relative; border: none; color: oklch(0.16 0.01 280);
+  background: var(--accent-grad); font-weight: 600;
+  box-shadow: 0 0 0 1px oklch(0.660 0.190 280 / 0.35), 0 8px 26px -10px var(--accent-glow);
+}
+.btn.primary:hover { filter: brightness(1.07) saturate(1.05); color: oklch(0.13 0.01 280); }
+.btn.primary:active { filter: brightness(0.98); }
+.btn.primary:focus-visible { box-shadow: 0 0 0 1px var(--bg-base), 0 0 0 3px var(--accent-glow), 0 8px 26px -10px var(--accent-glow); }
+
+/* destructive */
+.btn.danger { color: var(--sev-error); border-color: oklch(0.690 0.150 45 / 0.32); }
+.btn.danger:hover { background: oklch(0.690 0.150 45 / 0.10); border-color: oklch(0.690 0.150 45 / 0.5); color: oklch(0.76 0.13 45); }
+.btn.danger.solid { background: oklch(0.690 0.150 45 / 0.16); color: oklch(0.80 0.12 45); border-color: oklch(0.690 0.150 45 / 0.4); }
+
+.btn.loading { color: transparent !important; pointer-events: none; }
+.btn.loading::before {
+  content: ""; position: absolute; width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid oklch(1 0 0 / 0.25); border-top-color: oklch(1 0 0 / 0.9);
+  animation: cb-spin 0.7s linear infinite;
+}
+@keyframes cb-spin { to { transform: rotate(360deg); } }
+
+/* ===== inputs =========================================================== */
+.field { position: relative; border-radius: var(--r-md); }
+.input {
+  width: 100%; height: 38px; padding: 0 var(--s-3);
+  background: var(--bg-sunken); color: var(--text-hi);
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  font-family: var(--font-sans); font-size: var(--fs-14);
+  transition: border-color 0.15s, background 0.15s;
+}
+.input::placeholder { color: var(--text-faint); }
+.input.mono { font-family: var(--font-mono); font-size: var(--fs-13); }
+.input:hover { border-color: var(--line-strong); }
+.input:focus { background: var(--bg-sunken); }
+
+/* ===== chips ============================================================ */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px;
+  padding: 0 10px; border-radius: var(--r-full);
+  font-size: var(--fs-12); font-weight: 500; line-height: 1;
+  background: oklch(1 0 0 / 0.04); color: var(--text-mid);
+  border: 1px solid var(--line); cursor: pointer; user-select: none;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+  white-space: nowrap;
+}
+.chip:hover { background: oklch(1 0 0 / 0.07); color: var(--text-hi); }
+.chip.on { background: oklch(1 0 0 / 0.08); color: var(--text-hi); border-color: var(--line-strong); }
+.chip.mono { font-family: var(--font-mono); font-size: var(--fs-12); }
+.chip .x { color: var(--text-faint); font-size: 13px; margin-right: -2px; }
+.chip:hover .x { color: var(--text); }
+.chip.star { color: var(--text-mid); }
+.chip.star .ic { color: var(--accent-ink); }
+
+/* ===== card / glass ===================================================== */
+.card {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid var(--line); border-radius: var(--r-lg);
 }
 
-::selection {
-  background: var(--color-crash);
-  color: var(--color-ink-50);
+/* ===== severity edge cue (default variant: bar) ========================= */
+.sevcue { flex: none; }
+.sevcue.bar  { width: 3px; align-self: stretch; border-radius: 999px; background: var(--sv); }
+.sevcue.dot  { width: 8px; height: 8px; border-radius: 50%; background: var(--sv); box-shadow: 0 0 7px -1px var(--sv); }
+.sevcue.glow { width: 3px; align-self: stretch; border-radius: 999px; background: var(--sv); box-shadow: 0 0 12px -1px var(--sv), 0 0 4px var(--sv); }
+.sev-fatal   { --sv: var(--sev-fatal); }
+.sev-error   { --sv: var(--sev-error); }
+.sev-warning { --sv: var(--sev-warning); }
+.sev-info    { --sv: var(--sev-info); }
+.sev-debug   { --sv: var(--sev-debug); }
+.sev-text { color: var(--sv); }
+
+/* ===== status pill (detail meta only) =================================== */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px;
+  border-radius: var(--r-full); font-size: var(--fs-11); font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  border: 1px solid var(--line); color: var(--text-mid); font-family: var(--font-mono);
+}
+.pill .d { width: 6px; height: 6px; border-radius: 50%; }
+
+/* ===== code / mono block ================================================ */
+.codeblk {
+  font-family: var(--font-mono); font-size: var(--fs-13); line-height: 1.65;
+  background: var(--bg-sunken); border: 1px solid var(--line);
+  border-radius: var(--r-md); color: var(--text);
 }
 
-/* Hide scrollbars on idle but allow scrolling. */
-*::-webkit-scrollbar { width: 6px; height: 6px; }
-*::-webkit-scrollbar-thumb { background: var(--color-ink-600); border-radius: 3px; }
-*::-webkit-scrollbar-thumb:hover { background: var(--color-ink-500); }
+/* ===== comment-line voice (empty / loading states) ===================== */
+.voice { font-family: var(--font-mono); color: var(--text-lo); font-size: var(--fs-13); }
+.voice .pfx { color: var(--text-faint); }
 
-/* Subtle focus that respects the brand. */
-:focus-visible {
-  outline: 2px solid var(--color-crash);
-  outline-offset: 2px;
-  border-radius: 2px;
+/* ===== kbd ============================================================== */
+.kbd {
+  font-family: var(--font-mono); font-size: 11px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border: 1px solid var(--line); border-radius: 5px;
+  background: oklch(1 0 0 / 0.03); color: var(--text-mid);
 }
 
+/* ===== loading shimmer + live dot ====================================== */
+.skel { position: relative; overflow: hidden; background: oklch(1 0 0 / 0.04); border-radius: 6px; }
+.skel::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.05), transparent);
+  animation: cb-shimmer 1.4s infinite;
+}
+@keyframes cb-shimmer { 100% { transform: translateX(100%); } }
+@keyframes cb-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.livedot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-grad); box-shadow: 0 0 8px -1px var(--accent-glow); animation: cb-pulse 2.4s ease-in-out infinite; }
+
+/* ===== hover states that inline styles can't express =================== */
+.cb-link:hover { color: var(--accent-cyan) !important; }
+.cb-crumb:hover { color: var(--text-hi) !important; }
+.cb-minirow:hover { background: oklch(1 0 0 / 0.035); }
+.cb-menuitem:hover { background: oklch(1 0 0 / 0.05); }
+.cb-projbtn:hover { background: oklch(1 0 0 / 0.04); }
+.cb-cmdhint:hover { color: var(--text-mid) !important; border-color: var(--line-strong) !important; }
+.cb-tagchip:hover { border-color: var(--line-strong); background: oklch(1 0 0 / 0.07); }
+.cb-tick:hover { background: oklch(1 0 0 / 0.22) !important; }
+.cb-jsontoggle:hover { background: oklch(1 0 0 / 0.03); border-radius: 4px; }
+.cb-copy:hover { border-color: var(--line-strong) !important; }
+.cb-issuerow:hover { background: oklch(1 0 0 / 0.035); }

@@ -2,205 +2,162 @@ import { A } from '@solidjs/router'
 import { createResource, createSignal, For, Show } from 'solid-js'
 import { api } from '../api/client'
 import type { Issue, ProjectOverview } from '../api/types'
-import { EdgeBar } from '../components/EdgeBar'
-import { Sparkline } from '../components/Sparkline'
+import { Page } from '../components/layout'
+import { CopyBlock, fmt, Icon, PlatformTag, SevCue, Sparkline, Stat, Voice } from '../components/primitives'
 import { useAuth } from '../lib/auth-context'
 import { relTime } from '../lib/time'
 
 export default function ProjectsPage() {
   const [overview, { refetch }] = createResource(() => api.projects.overview())
   const { user } = useAuth()
-  const [showCreate, setShowCreate] = createSignal(false)
+  const [creating, setCreating] = createSignal(false)
+  const [refreshing, setRefreshing] = createSignal(false)
+
+  const doRefresh = async () => {
+    setRefreshing(true)
+    await refetch()
+    setRefreshing(false)
+  }
 
   return (
-    <section class="flex flex-col gap-6">
-      <header class="flex items-baseline justify-between">
-        <h1 class="font-serif text-[28px] text-ink-50 leading-none">projects</h1>
-        <div class="flex gap-3 text-[12px] text-ink-400">
-          <button onClick={() => void refetch()} class="hover:text-ink-100" title="refresh">
-            ↻ refresh
+    <Page>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '16px', 'margin-bottom': '22px' }}>
+        <h1 class="mono" style={{ 'font-size': '26px', 'font-weight': 600 }}>projects</h1>
+        <span class="mono tnum" style={{ 'font-size': '13px', color: 'var(--text-faint)', 'margin-top': '6px' }}>
+          {(overview() ?? []).length}
+        </span>
+        <div style={{ flex: '1' }} />
+        <button class={`btn sm ${refreshing() ? 'loading' : ''}`} onClick={doRefresh} style={{ position: 'relative' }}>
+          <Icon name="refresh" size={13} /> refresh
+        </button>
+        <Show when={user()?.is_admin && !creating()}>
+          <button class="btn sm primary" onClick={() => setCreating(true)}>
+            <Icon name="plus" size={13} /> new
           </button>
-          <Show when={user()?.is_admin}>
-            <button
-              class="hover:text-ink-100"
-              onClick={() => setShowCreate((s) => !s)}
-            >
-              {showCreate() ? 'cancel' : '+ new'}
-            </button>
-          </Show>
-        </div>
-      </header>
+        </Show>
+      </div>
 
-      <Show when={showCreate()}>
-        <CreateProjectForm
-          onDone={() => {
-            setShowCreate(false)
-            void refetch()
-          }}
-        />
+      <Show when={creating()}>
+        <div style={{ 'margin-bottom': '18px' }}>
+          <CreateProject onCancel={() => setCreating(false)} onCreated={() => { setCreating(false); void refetch() }} />
+        </div>
       </Show>
 
       <Show
         when={!overview.loading}
-        fallback={<p class="text-ink-400 text-[12px]">// loading…</p>}
+        fallback={<div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}><For each={[0, 1, 2]}>{() => <ProjectSkeleton />}</For></div>}
       >
         <Show
           when={(overview() ?? []).length > 0}
-          fallback={
-            <p class="text-ink-300 text-[13px]">
-              // no projects yet. set <code>CRASHBOX_PROJECT_NAME</code> and restart.
-            </p>
-          }
+          fallback={<div class="card" style={{ padding: '40px', 'text-align': 'center' }}><Voice>no projects yet. spin one up to get a DSN.</Voice></div>}
         >
-          <div class="flex flex-col gap-3">
+          <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
             <For each={overview()}>{(p) => <ProjectCard project={p} />}</For>
           </div>
         </Show>
       </Show>
-    </section>
+    </Page>
   )
 }
 
 function ProjectCard(props: { project: ProjectOverview }) {
   const [dsn] = createResource(() => api.projects.dsn(props.project.id))
-  const [copied, setCopied] = createSignal(false)
-
-  const copy = async () => {
-    const d = dsn()
-    if (!d) return
-    try {
-      await navigator.clipboard.writeText(d.dsn)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      /* clipboard blocked */
-    }
-  }
+  const recent = () => props.project.recent_issues.filter((i) => i.status === 'unresolved').slice(0, 3)
 
   return (
-    <article class="border border-ink-600 bg-ink-700/20 flex flex-col">
-      <header class="flex items-baseline gap-3 px-4 py-3 border-b border-ink-600">
-        <A
-          href={`/projects/${props.project.id}/issues`}
-          class="text-ink-50 hover:text-crash text-[15px]"
-        >
-          {props.project.name}
-        </A>
-        <span class="text-ink-400 text-[11px]">{props.project.slug}</span>
-        <Show when={props.project.platform}>
-          <span class="text-ink-400 text-[11px]">· {props.project.platform}</span>
-        </Show>
-        <div class="ml-auto flex gap-4 text-[11px] text-ink-300">
-          <A
-            href={`/projects/${props.project.id}/issues`}
-            class="hover:text-ink-100"
-          >
-            issues
-          </A>
-          <A
-            href={`/projects/${props.project.id}/settings`}
-            class="hover:text-ink-100"
-          >
-            settings
-          </A>
-        </div>
-      </header>
-
-      <div class="px-4 py-3 flex items-baseline gap-6 text-[12px] border-b border-ink-600">
-        <Stat
-          value={props.project.unresolved_count}
-          label="unresolved"
-          accent={props.project.unresolved_count > 0}
-        />
-        <Stat value={props.project.events_24h} label="events / 24h" />
-        <Show when={dsn()}>
-          {(d) => (
-            <button
-              onClick={copy}
-              class={`ml-auto font-mono text-[11px] text-left text-ink-300 hover:text-ink-100 truncate max-w-[440px] ${
-                copied() ? 'underline decoration-crash decoration-2 underline-offset-4' : ''
-              }`}
-              title="click to copy DSN"
+    <div class="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', 'align-items': 'flex-start', gap: '16px', padding: '18px 20px 14px' }}>
+        <div style={{ flex: '1', 'min-width': 0, display: 'flex', 'flex-direction': 'column', gap: '5px' }}>
+          <div style={{ display: 'flex', 'align-items': 'center', gap: '12px' }}>
+            <A
+              href={`/projects/${props.project.id}/issues`}
+              class="mono cb-link"
+              style={{ 'font-size': '16px', 'font-weight': 600, color: 'var(--text-hi)', 'white-space': 'nowrap' }}
             >
-              {d().dsn}
-            </button>
-          )}
+              {props.project.name}
+            </A>
+            <Show when={props.project.unresolved_count > 0}>
+              <span class="livedot" title="actively receiving events" />
+            </Show>
+          </div>
+          <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', 'white-space': 'nowrap' }}>
+            <span class="mono" style={{ 'font-size': '12px', color: 'var(--text-faint)' }}>{props.project.slug}</span>
+            <Show when={props.project.platform}>
+              <span style={{ color: 'var(--text-faint)', opacity: 0.4 }}>·</span>
+              <PlatformTag platform={props.project.platform} />
+            </Show>
+          </div>
+        </div>
+        <div style={{ display: 'flex', 'align-items': 'flex-start', gap: '24px', flex: 'none' }}>
+          <Stat label="unresolved" value={props.project.unresolved_count} accent={props.project.unresolved_count > 0} />
+          <Stat label="events / 24h" value={props.project.events_24h} />
+        </div>
+      </div>
+
+      <div style={{ padding: '0 20px 14px' }}>
+        <Show when={dsn()} fallback={<div class="skel" style={{ height: '40px' }} />}>
+          {(d) => <CopyBlock value={d().dsn} />}
         </Show>
       </div>
 
-      <Show
-        when={props.project.recent_issues.length > 0}
-        fallback={
-          <p class="px-4 py-4 text-[12px] text-ink-400">
-            // no events yet — point your SDK at the DSN above
-          </p>
-        }
-      >
-        <ul class="divide-y divide-ink-700">
-          <For each={props.project.recent_issues}>
-            {(issue) => <RecentIssueRow issue={issue} />}
-          </For>
-        </ul>
-      </Show>
-    </article>
-  )
-}
+      <div style={{ 'border-top': '1px solid var(--line-soft)', padding: '8px 10px 10px' }}>
+        <Show
+          when={recent().length > 0}
+          fallback={
+            <Voice style={{ padding: '10px' }}>
+              {props.project.unresolved_count === 0 ? "nothing's on fire" : 'waiting for the first crash'}
+            </Voice>
+          }
+        >
+          <For each={recent()}>{(iss) => <MiniIssue issue={iss} />}</For>
+        </Show>
+      </div>
 
-function Stat(props: { value: number; label: string; accent?: boolean }) {
-  return (
-    <div class="flex items-baseline gap-1.5">
-      <span
-        class={`tabular-nums text-[15px] ${
-          props.accent ? 'text-crash' : 'text-ink-100'
-        }`}
-      >
-        {props.value.toLocaleString()}
-      </span>
-      <span class="text-ink-400">{props.label}</span>
+      <div style={{ display: 'flex', gap: '12px', padding: '0 20px 16px' }}>
+        <A href={`/projects/${props.project.id}/issues`} class="btn sm">issues</A>
+        <A href={`/projects/${props.project.id}/settings`} class="btn sm ghost">settings</A>
+      </div>
     </div>
   )
 }
 
-function RecentIssueRow(props: { issue: Issue }) {
-  const isResolved = () => props.issue.status === 'resolved'
+function MiniIssue(props: { issue: Issue }) {
+  const resolved = () => props.issue.status === 'resolved'
   return (
-    <li class="flex items-stretch">
-      <EdgeBar level={props.issue.level} resolved={isResolved()} />
-      <A
-        href={`/issues/${props.issue.id}`}
-        class={`flex-1 flex items-center gap-3 px-3 py-2 hover:bg-ink-700/30 ${
-          isResolved() ? 'opacity-50' : ''
-        }`}
-      >
-        <span class="text-[11px] text-ink-400 w-12 text-right tabular-nums shrink-0">
-          {props.issue.event_count.toLocaleString()}×
-        </span>
-        <Sparkline buckets={props.issue.last_24h_buckets} />
-        <span class="text-ink-100 truncate font-mono text-[12px]">{props.issue.title}</span>
-        <span class="ml-auto text-[11px] text-ink-400 shrink-0">
-          {relTime(props.issue.last_seen)}
-        </span>
-      </A>
-    </li>
+    <A
+      href={`/issues/${props.issue.id}`}
+      class="cb-minirow"
+      style={{
+        display: 'flex', 'align-items': 'center', gap: '12px', width: '100%', 'text-align': 'left',
+        padding: '7px 10px', 'border-radius': '7px', opacity: resolved() ? 0.5 : 1,
+      }}
+    >
+      <SevCue level={props.issue.level} />
+      <span class="mono tnum" style={{ 'font-size': '12px', color: 'var(--text-lo)', width: '52px', 'text-align': 'right', flex: 'none' }}>
+        {fmt(props.issue.event_count)}×
+      </span>
+      <Sparkline buckets={props.issue.last_24h_buckets} w={52} h={16} dim={resolved()} />
+      <span class="mono" style={{ flex: '1', 'min-width': 0, overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap', 'font-size': '12.5px', color: 'var(--text)' }}>
+        {props.issue.title}
+      </span>
+      <span class="mono" style={{ 'font-size': '11.5px', color: 'var(--text-faint)', flex: 'none' }}>{relTime(props.issue.last_seen)}</span>
+    </A>
   )
 }
 
-function CreateProjectForm(props: { onDone: () => void }) {
+function CreateProject(props: { onCancel: () => void; onCreated: () => void }) {
   const [name, setName] = createSignal('')
-  const [platform, setPlatform] = createSignal('')
+  const [platform, setPlatform] = createSignal('javascript')
   const [busy, setBusy] = createSignal(false)
   const [err, setErr] = createSignal<string | null>(null)
 
-  const submit = async (e: SubmitEvent) => {
-    e.preventDefault()
+  const submit = async () => {
+    if (!name().trim()) return
     setBusy(true)
     setErr(null)
     try {
-      await api.projects.create({
-        name: name(),
-        platform: platform() || undefined,
-      })
-      props.onDone()
+      await api.projects.create({ name: name().trim(), platform: platform() || undefined })
+      props.onCreated()
     } catch (e) {
       setErr((e as Error).message)
     } finally {
@@ -209,40 +166,51 @@ function CreateProjectForm(props: { onDone: () => void }) {
   }
 
   return (
-    <form
-      onSubmit={submit}
-      class="flex flex-col gap-3 border border-ink-600 bg-ink-700/40 p-4"
-    >
-      <div class="flex gap-3">
-        <label class="flex flex-col gap-1 flex-1">
-          <span class="text-[11px] text-ink-300">name</span>
-          <input
-            value={name()}
-            onInput={(e) => setName(e.currentTarget.value)}
-            required
-            class="bg-ink-800 border border-ink-600 px-3 py-2 focus:border-crash focus:outline-none"
-          />
+    <div class="card" style={{ padding: '20px' }}>
+      <div class="mono" style={{ 'font-size': '13px', color: 'var(--text-hi)', 'margin-bottom': '14px' }}>// new project</div>
+      <div style={{ display: 'flex', 'align-items': 'flex-end', gap: '12px', 'flex-wrap': 'wrap' }}>
+        <label style={{ display: 'flex', 'flex-direction': 'column', gap: '6px', flex: '1', 'min-width': '200px' }}>
+          <span class="mono" style={{ 'font-size': '11px', color: 'var(--text-lo)' }}>name</span>
+          <span class="field cb-focusring">
+            <input
+              class="input mono"
+              autofocus
+              placeholder="billing-worker"
+              value={name()}
+              onInput={(e) => setName(e.currentTarget.value)}
+              onKeyDown={(e) => e.key === 'Enter' && submit()}
+            />
+          </span>
         </label>
-        <label class="flex flex-col gap-1 w-[160px]">
-          <span class="text-[11px] text-ink-300">platform</span>
-          <input
-            value={platform()}
-            onInput={(e) => setPlatform(e.currentTarget.value)}
-            placeholder="javascript"
-            class="bg-ink-800 border border-ink-600 px-3 py-2 focus:border-crash focus:outline-none"
-          />
+        <label style={{ display: 'flex', 'flex-direction': 'column', gap: '6px', width: '160px' }}>
+          <span class="mono" style={{ 'font-size': '11px', color: 'var(--text-lo)' }}>platform</span>
+          <span class="field cb-focusring" style={{ display: 'block' }}>
+            <select class="input mono" value={platform()} onChange={(e) => setPlatform(e.currentTarget.value)} style={{ cursor: 'pointer' }}>
+              <For each={['javascript', 'node', 'rust', 'python', 'go', 'ruby']}>{(p) => <option value={p}>{p}</option>}</For>
+            </select>
+          </span>
         </label>
+        <button class={`btn primary ${busy() ? 'loading' : ''}`} disabled={!name().trim()} onClick={submit} style={{ position: 'relative' }}>create</button>
+        <button class="btn ghost" onClick={props.onCancel}>cancel</button>
       </div>
-      <Show when={err()}>
-        {(m) => <p class="text-[12px] text-crash">// {m()}</p>}
-      </Show>
-      <button
-        type="submit"
-        disabled={busy()}
-        class="self-start bg-crash text-ink-50 px-3 py-1 hover:bg-crash-dim disabled:opacity-50"
-      >
-        {busy() ? 'creating…' : 'create'}
-      </button>
-    </form>
+      <Show when={err()}>{(m) => <div class="mono" style={{ 'font-size': '12px', color: 'var(--sev-error)', 'margin-top': '12px' }}>// {m()}</div>}</Show>
+    </div>
+  )
+}
+
+function ProjectSkeleton() {
+  return (
+    <div class="card" style={{ padding: '20px' }}>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '16px' }}>
+        <div style={{ flex: '1', display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+          <div class="skel" style={{ width: '140px', height: '18px' }} />
+          <div class="skel" style={{ width: '90px', height: '12px' }} />
+        </div>
+        <div class="skel" style={{ width: '70px', height: '34px' }} />
+        <div class="skel" style={{ width: '70px', height: '34px' }} />
+      </div>
+      <div class="skel" style={{ height: '40px', 'margin-top': '16px' }} />
+      <div class="skel" style={{ height: '30px', 'margin-top': '14px', width: '70%' }} />
+    </div>
   )
 }
