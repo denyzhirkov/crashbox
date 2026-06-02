@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Integration tests for B3 tag filtering.
 
 use crashbox::app_state::AppState;
@@ -14,7 +15,9 @@ async fn spawn_app() -> SocketAddr {
     let tmp = tempfile::tempdir().unwrap();
     let db_path = tmp.path().join("cb.db");
     let cfg = {
-        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         std::env::set_var(
             "CRASHBOX_DATABASE_URL",
             format!("sqlite://{}", db_path.display()),

@@ -14,77 +14,76 @@ use rust_embed::RustEmbed;
 #[folder = "../frontend/dist/"]
 struct Asset;
 
-pub async fn serve_root() -> Response {
-    serve_inner("index.html").await
+pub fn serve_root() -> Response {
+    serve_inner("index.html")
 }
 
-pub async fn serve_path(Path(path): Path<String>) -> Response {
+pub fn serve_path(Path(path): Path<String>) -> Response {
     // Anything with an extension is asset-like; serve the file or 404.
     // Anything else — SPA route — falls back to index.html.
     if path.contains('.') {
-        let resp = serve_inner(&path).await;
+        let resp = serve_inner(&path);
         if resp.status() == StatusCode::NOT_FOUND {
-            return spa_index().await;
-        }
-        return resp
-    }
-    spa_index().await
-}
-
-pub async fn fallback(uri: Uri) -> Response {
-    let path = uri.path().trim_start_matches('/');
-    if path.is_empty() {
-        return spa_index().await;
-    }
-    if path.contains('.') {
-        let resp = serve_inner(path).await;
-        if resp.status() == StatusCode::NOT_FOUND {
-            return spa_index().await;
+            return spa_index();
         }
         return resp;
     }
-    spa_index().await
+    spa_index()
 }
 
-async fn spa_index() -> Response {
-    serve_inner("index.html").await
-}
-
-async fn serve_inner(path: &str) -> Response {
-    match Asset::get(path) {
-        Some(content) => {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-            let mut resp = Response::builder()
-                .status(StatusCode::OK)
-                .body(Body::from(content.data.into_owned()))
-                .unwrap_or_else(|_| Response::new(Body::empty()));
-            if let Ok(v) = HeaderValue::from_str(mime.as_ref()) {
-                resp.headers_mut().insert(header::CONTENT_TYPE, v);
-            }
-            // Cache hashed assets aggressively; index.html is always fresh.
-            let cache = if path == "index.html" {
-                "no-cache"
-            } else {
-                "public, max-age=31536000, immutable"
-            };
-            if let Ok(v) = HeaderValue::from_str(cache) {
-                resp.headers_mut().insert(header::CACHE_CONTROL, v);
-            }
-            resp
-        }
-        None => {
-            // No build artifacts present yet — return a tiny placeholder when looking up index.
-            if path == "index.html" {
-                return (
-                    StatusCode::OK,
-                    [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                    PLACEHOLDER_HTML,
-                )
-                    .into_response();
-            }
-            (StatusCode::NOT_FOUND, "not found").into_response()
-        }
+// axum's `Handler` trait is only implemented for async fns, so this stays `async` even though the
+// asset lookup underneath is synchronous (rust-embed).
+#[allow(clippy::unused_async)]
+pub async fn fallback(uri: Uri) -> Response {
+    let path = uri.path().trim_start_matches('/');
+    if path.is_empty() {
+        return spa_index();
     }
+    if path.contains('.') {
+        let resp = serve_inner(path);
+        if resp.status() == StatusCode::NOT_FOUND {
+            return spa_index();
+        }
+        return resp;
+    }
+    spa_index()
+}
+
+fn spa_index() -> Response {
+    serve_inner("index.html")
+}
+
+fn serve_inner(path: &str) -> Response {
+    let Some(content) = Asset::get(path) else {
+        // No build artifacts present yet — return a tiny placeholder when looking up index.
+        if path == "index.html" {
+            return (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                PLACEHOLDER_HTML,
+            )
+                .into_response();
+        }
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    let mime = mime_guess::from_path(path).first_or_octet_stream();
+    let mut resp = Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from(content.data.into_owned()))
+        .unwrap_or_else(|_| Response::new(Body::empty()));
+    if let Ok(v) = HeaderValue::from_str(mime.as_ref()) {
+        resp.headers_mut().insert(header::CONTENT_TYPE, v);
+    }
+    // Cache hashed assets aggressively; index.html is always fresh.
+    let cache = if path == "index.html" {
+        "no-cache"
+    } else {
+        "public, max-age=31536000, immutable"
+    };
+    if let Ok(v) = HeaderValue::from_str(cache) {
+        resp.headers_mut().insert(header::CACHE_CONTROL, v);
+    }
+    resp
 }
 
 const PLACEHOLDER_HTML: &str = r#"<!doctype html>

@@ -84,6 +84,8 @@ export function CommandPalette() {
     if (pid != null) {
       out.push({ id: 'copydsn', category: 'project', icon: 'copy', label: 'copy DSN', run: async () => { const d = await api.projects.dsn(pid); await copy(d.dsn) } })
       out.push({ id: 'pissues', category: 'project', icon: 'bolt', label: 'view issues', run: () => nav(`/projects/${pid}/issues`) })
+      if (auth.user()?.live_logs_enabled !== false)
+        out.push({ id: 'plogs', category: 'project', icon: 'clock', label: 'view live logs', run: () => nav(`/projects/${pid}/logs`) })
       out.push({ id: 'psettings', category: 'project', icon: 'ext', label: 'project settings', run: () => nav(`/projects/${pid}/settings`) })
       out.push({ id: 'pfatals', category: 'project', icon: 'search', label: 'filter · unresolved fatals', run: () => nav(`/projects/${pid}/issues?q=level:fatal`) })
     }

@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Retention sweep correctness:
 //! - Events older than `retention_days` are deleted...
 //! - ...EXCEPT the most recent `max_events_per_issue` per issue, which always survive.
@@ -207,20 +208,18 @@ async fn auto_resolves_stale_unresolved_issues() {
     };
     cleanup::run_once(&pool, &retention).await.expect("sweep");
 
-    let stale_status: String =
-        sqlx::query_scalar("SELECT status FROM issues WHERE id = ?")
-            .bind(stale_id)
-            .fetch_one(&pool)
-            .await
-            .expect("stale status");
+    let stale_status: String = sqlx::query_scalar("SELECT status FROM issues WHERE id = ?")
+        .bind(stale_id)
+        .fetch_one(&pool)
+        .await
+        .expect("stale status");
     assert_eq!(stale_status, "resolved");
 
-    let fresh_status: String =
-        sqlx::query_scalar("SELECT status FROM issues WHERE id = ?")
-            .bind(fresh_id)
-            .fetch_one(&pool)
-            .await
-            .expect("fresh status");
+    let fresh_status: String = sqlx::query_scalar("SELECT status FROM issues WHERE id = ?")
+        .bind(fresh_id)
+        .fetch_one(&pool)
+        .await
+        .expect("fresh status");
     assert_eq!(fresh_status, "unresolved");
 }
 
@@ -270,6 +269,9 @@ async fn fresh_events_inside_retention_never_deleted() {
         auto_resolve_days: 0,
     };
     let deleted = cleanup::run_once(&pool, &retention).await.expect("sweep");
-    assert_eq!(deleted, 0, "events within retention window must not be deleted");
+    assert_eq!(
+        deleted, 0,
+        "events within retention window must not be deleted"
+    );
     assert_eq!(count(&pool, "events").await, 5);
 }

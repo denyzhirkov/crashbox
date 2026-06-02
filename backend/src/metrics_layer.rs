@@ -17,6 +17,9 @@ use crate::app_state::AppState;
 
 /// Initializes the global recorder and returns a handle that the /metrics endpoint can use to
 /// render. Safe to call exactly once at process startup.
+// Startup-once, fail-loud: a failure here means the process can't expose metrics, so panicking at
+// boot is the correct behavior (this is startup glue, not the request path).
+#[allow(clippy::expect_used)]
 pub fn init() -> PrometheusHandle {
     PrometheusBuilder::new()
         .install_recorder()
@@ -48,7 +51,10 @@ pub async fn render(State(state): State<AppState>) -> impl IntoResponse {
     let handle = state.metrics.handle.clone();
     let body = handle.render();
     (
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4",
+        )],
         body,
     )
 }

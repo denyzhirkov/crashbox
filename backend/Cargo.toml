@@ -1,6 +1,6 @@
 [package]
 name = "crashbox"
-version = "1.3.0"
+version = "1.4.0"
 edition = "2021"
 rust-version = "1.80"
 description = "Tiny self-hosted Sentry-compatible error tracking server"
@@ -12,6 +12,7 @@ tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "limit", "cors"] }
 tokio-util = "0.7"
+tokio-stream = { version = "0.1", features = ["sync"] }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -40,7 +41,7 @@ metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.16", default-features = false }
 
 [dev-dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies", "stream"] }
 tempfile = "3"
 
 [lints.rust]
@@ -49,11 +50,26 @@ unsafe_code = "forbid"
 [lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
+# unwrap/expect are forbidden in production code (panics on the ingest hot path are an acceptance
+# criterion). They are allowed in test code via `#![cfg_attr(test, allow(...))]` at the crate roots
+# and an inner allow atop each integration test file.
 unwrap_used = "warn"
 expect_used = "warn"
-missing_errors_doc = "allow"
+# Low-signal pedantic lints, allowed project-wide for an application binary (not a public library):
+missing_errors_doc = "allow"        # internal handlers, not a documented API surface
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"
+must_use_candidate = "allow"        # #[must_use] noise on app-internal getters
+doc_markdown = "allow"              # backtick nags in prose doc comments
+option_option = "allow"             # legitimate for JSON merge-patch (absent vs. explicit null)
+return_self_not_must_use = "allow"
+# Numeric casts here are deliberate (byte sizes, epoch timestamps, bucket math); TryFrom everywhere
+# would add noise without catching a real bug in this codebase.
+cast_lossless = "allow"
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
 
 [profile.release]
 lto = "thin"

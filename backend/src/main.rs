@@ -1,3 +1,6 @@
+// unwrap/expect are forbidden in production code but fine in unit tests.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use std::sync::Arc;
 
 use clap::Parser;
@@ -32,7 +35,11 @@ async fn main() -> anyhow::Result<()> {
     bootstrap::run(&pool, &cfg).await?;
 
     let cancel = CancellationToken::new();
-    jobs::cleanup::spawn(pool.clone(), Arc::new(cfg.retention.clone()), cancel.clone());
+    jobs::cleanup::spawn(
+        pool.clone(),
+        Arc::new(cfg.retention.clone()),
+        cancel.clone(),
+    );
 
     let metrics_handle = crashbox::metrics_layer::init();
     let metrics = crashbox::metrics_layer::MetricsHandle {
@@ -87,7 +94,7 @@ async fn shutdown_signal() {
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
+        () = ctrl_c => {},
+        () = terminate => {},
     }
 }

@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Integration test: real Sentry-style envelope is accepted, stored, and looked up by event_id.
 
 use crashbox::app_state::AppState;
@@ -14,7 +15,9 @@ async fn spawn_app() -> (SocketAddr, sqlx::SqlitePool) {
     let db_path = tmp.path().join("crashbox.db");
 
     let cfg = {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         std::env::set_var(
             "CRASHBOX_DATABASE_URL",
             format!("sqlite://{}", db_path.display()),
@@ -33,7 +36,11 @@ async fn spawn_app() -> (SocketAddr, sqlx::SqlitePool) {
         .await
         .expect("bootstrap");
 
-    let state = AppState::new(cfg, pool.clone(), crashbox::metrics_layer::MetricsHandle::dummy());
+    let state = AppState::new(
+        cfg,
+        pool.clone(),
+        crashbox::metrics_layer::MetricsHandle::dummy(),
+    );
     let app = http::routes::build(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -116,7 +123,6 @@ async fn groups_same_exception_into_one_issue() {
 
     let send = |payload: String| {
         let client = client.clone();
-        let addr = addr;
         async move {
             client
                 .post(format!("http://{addr}/api/1/envelope/"))
@@ -171,14 +177,16 @@ async fn groups_same_exception_into_one_issue() {
         .fetch_one(&pool)
         .await
         .expect("count");
-    assert_eq!(issue_count, 2, "TypeError variants merge, RangeError is its own");
+    assert_eq!(
+        issue_count, 2,
+        "TypeError variants merge, RangeError is its own"
+    );
 
-    let event_counts: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT title, event_count FROM issues WHERE project_id = 1 ORDER BY id",
-    )
-    .fetch_all(&pool)
-    .await
-    .expect("rows");
+    let event_counts: Vec<(String, i64)> =
+        sqlx::query_as("SELECT title, event_count FROM issues WHERE project_id = 1 ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .expect("rows");
     let tt = event_counts
         .iter()
         .find(|(t, _)| t.starts_with("TypeError"))
@@ -227,9 +235,9 @@ async fn concurrent_burst_does_not_deadlock_on_sqlite() {
     // because `pool.begin()` (BEGIN DEFERRED) caused upgrade races between SHARED→RESERVED.
     // The fix: `db::begin_write()` uses `BEGIN IMMEDIATE`, which serializes cleanly via
     // busy_timeout.
+    const N: usize = 50;
     let (addr, pool) = spawn_app().await;
     let client = reqwest::Client::new();
-    const N: usize = 50;
 
     // All identical so they group into one issue with event_count=N.
     let payload = serde_json::json!({
@@ -292,7 +300,10 @@ async fn concurrent_burst_does_not_deadlock_on_sqlite() {
             .fetch_one(&pool)
             .await
             .expect("event_count");
-    assert_eq!(event_count as usize, N, "issue.event_count must equal total");
+    assert_eq!(
+        event_count as usize, N,
+        "issue.event_count must equal total"
+    );
 }
 
 #[tokio::test]

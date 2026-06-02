@@ -35,10 +35,9 @@ impl AppError {
     fn public_message(&self) -> String {
         match self {
             Self::NotFound => "not found".into(),
-            Self::BadRequest(m) => m.clone(),
+            Self::BadRequest(m) | Self::Conflict(m) => m.clone(),
             Self::Unauthorized => "unauthorized".into(),
             Self::Forbidden => "forbidden".into(),
-            Self::Conflict(m) => m.clone(),
             Self::Internal(_) => "internal error".into(),
         }
     }

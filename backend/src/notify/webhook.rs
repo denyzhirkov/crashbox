@@ -5,7 +5,7 @@
 
 use async_trait::async_trait;
 
-use super::{Notification, NotifyError, Notifier};
+use super::{Notification, Notifier, NotifyError};
 
 pub struct GenericWebhook {
     url: String,

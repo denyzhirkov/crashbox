@@ -1,0 +1,72 @@
+name: CI
+
+# The quality gate, enforced on every push to main and every PR. Mirrors the local gate
+# (docs/development.md): backend fmt + clippy (warnings = errors) + tests, frontend type-check +
+# build. The Rust toolchain is pinned by backend/rust-toolchain.toml, so CI and local use the same
+# compiler and the same lint set.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch/PR cancels the older in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (fmt · clippy · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reading any cargo command triggers rustup to install the pinned toolchain + its
+      # components (rustfmt, clippy) from rust-toolchain.toml. `rustup show` makes that explicit.
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (warnings = errors)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace
+
+  frontend:
+    name: Frontend (type-check · build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    # Matches the Dockerfile's supply-chain knob so --frozen-lockfile installs deterministically.
+    env:
+      PNPM_CONFIG_MINIMUM_RELEASE_AGE: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable pnpm (via corepack)
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # `pnpm build` runs `tsc -b && vite build` — this is both the type-check and the bundle.
+      - name: Type-check and build
+        run: pnpm build

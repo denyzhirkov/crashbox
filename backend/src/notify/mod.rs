@@ -115,11 +115,7 @@ impl NotifyHub {
         }
 
         let limiters = (0..notifiers.len())
-            .map(|_| {
-                Arc::new(Mutex::new(TokenBucket::new(
-                    cfg.notify.max_per_minute.into(),
-                )))
-            })
+            .map(|_| Arc::new(Mutex::new(TokenBucket::new(cfg.notify.max_per_minute))))
             .collect();
 
         Self {

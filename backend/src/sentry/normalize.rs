@@ -89,7 +89,14 @@ pub fn from_value(v: &Value) -> NormalizedEvent {
     // Default level to "error" when an exception is present, "info" otherwise — matches Sentry SDK
     // behavior closely enough for grouping/UX, and only when SDK omits the field.
     if ev.level.is_none() {
-        ev.level = Some(if ev.exception.is_some() { "error" } else { "info" }.to_string());
+        ev.level = Some(
+            if ev.exception.is_some() {
+                "error"
+            } else {
+                "info"
+            }
+            .to_string(),
+        );
     }
     ev
 }
@@ -158,7 +165,10 @@ fn extract_exception(v: &Value) -> Option<ExceptionInfo> {
     let primary = values.last()?; // Sentry convention: the *last* exception in `values` is the
                                   // most recently raised (deepest cause first).
 
-    let ty = primary.get("type").and_then(Value::as_str).map(str::to_string);
+    let ty = primary
+        .get("type")
+        .and_then(Value::as_str)
+        .map(str::to_string);
     let value = primary
         .get("value")
         .and_then(Value::as_str)
@@ -182,11 +192,10 @@ fn extract_exception(v: &Value) -> Option<ExceptionInfo> {
 /// Sentry orders frames bottom-up: last frame in the array is the topmost (most recent) call.
 /// Prefer the topmost `in_app == true` frame; fall back to the topmost frame.
 fn best_frame_signature(frames: &[Value]) -> Option<String> {
-    let in_app = frames.iter().rev().find(|f| {
-        f.get("in_app")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-    });
+    let in_app = frames
+        .iter()
+        .rev()
+        .find(|f| f.get("in_app").and_then(Value::as_bool).unwrap_or(false));
     let chosen = in_app.or_else(|| frames.last())?;
     Some(frame_signature(chosen))
 }
@@ -196,10 +205,7 @@ fn frame_signature(frame: &Value) -> String {
         .get("function")
         .and_then(Value::as_str)
         .unwrap_or("<anon>");
-    let module = frame
-        .get("module")
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let module = frame.get("module").and_then(Value::as_str).unwrap_or("");
     let filename = frame
         .get("filename")
         .or_else(|| frame.get("abs_path"))
@@ -259,18 +265,23 @@ fn extract_tags(v: &Value) -> Vec<(String, String)> {
 
 fn extract_breadcrumbs(v: &Value) -> Vec<Breadcrumb> {
     // Breadcrumbs may be `{values: [...]}` or a bare array.
-    let arr = v
-        .get("breadcrumbs")
-        .and_then(|b| b.get("values").and_then(Value::as_array).or_else(|| b.as_array()));
+    let arr = v.get("breadcrumbs").and_then(|b| {
+        b.get("values")
+            .and_then(Value::as_array)
+            .or_else(|| b.as_array())
+    });
     let Some(arr) = arr else { return Vec::new() };
 
     arr.iter()
         .map(|b| Breadcrumb {
             timestamp: b.get("timestamp").map(stringify_scalar),
-            category: b.get("category").and_then(Value::as_str).map(str::to_string),
+            category: b
+                .get("category")
+                .and_then(Value::as_str)
+                .map(str::to_string),
             level: b.get("level").and_then(Value::as_str).map(str::to_string),
             message: b.get("message").and_then(Value::as_str).map(str::to_string),
-            data_json: b.get("data").map(|d| d.to_string()),
+            data_json: b.get("data").map(ToString::to_string),
         })
         .collect()
 }
@@ -330,7 +341,9 @@ fn is_uuid_like(t: &str) -> bool {
     if !parts.iter().zip(expected).all(|(p, n)| p.len() == n) {
         return false;
     }
-    parts.iter().all(|p| p.chars().all(|c| c.is_ascii_hexdigit()))
+    parts
+        .iter()
+        .all(|p| p.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 fn is_long_hex(t: &str) -> bool {

@@ -3,6 +3,8 @@ export type User = {
   email: string
   is_admin: boolean
   name?: string | null
+  /** Global feature flag from the server; when false the UI hides the Live Logs section. */
+  live_logs_enabled?: boolean
 }
 
 export type Project = {
@@ -90,3 +92,15 @@ export type IssueFilters = {
 }
 
 export type SnoozeAction = '1h' | '1d' | '1w' | 'forever' | 'wake'
+
+export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
+
+/** One ephemeral live-log line. Mirrors backend `livelog::LogRecord` (RAM-only, never persisted). */
+export type LogRecord = {
+  ts: string
+  level: LogLevel
+  message: string
+  logger?: string
+  trace_id?: string
+  attrs?: Record<string, unknown>
+}

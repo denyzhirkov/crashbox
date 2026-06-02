@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Integration tests for A2 spike detection.
 
 use axum::extract::State;
@@ -75,7 +76,12 @@ async fn seed_project_and_issue(pool: &SqlitePool) -> i64 {
     row.last_insert_rowid()
 }
 
-async fn insert_events_at_offset(pool: &SqlitePool, issue_id: i64, count: i64, ago: ChronoDuration) {
+async fn insert_events_at_offset(
+    pool: &SqlitePool,
+    issue_id: i64,
+    count: i64,
+    ago: ChronoDuration,
+) {
     for _ in 0..count {
         let ts = (Utc::now() - ago).to_rfc3339();
         sqlx::query(

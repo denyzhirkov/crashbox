@@ -1,0 +1,6 @@
+# Pinned toolchain — the build/lint gate is only meaningful if everyone (and CI) uses the same
+# compiler. Bump this deliberately, fix any new lints in the same change, never let it float.
+[toolchain]
+channel = "1.92.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

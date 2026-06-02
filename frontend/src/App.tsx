@@ -9,6 +9,7 @@ const Projects = lazy(() => import('./pages/Projects'))
 const Issues = lazy(() => import('./pages/Issues'))
 const IssueDetail = lazy(() => import('./pages/IssueDetail'))
 const Settings = lazy(() => import('./pages/Settings'))
+const LiveLogs = lazy(() => import('./pages/LiveLogs'))
 
 function Shell(props: { children: any }) {
   return (
@@ -32,6 +33,10 @@ export default function App() {
         <Route
           path="/projects/:projectId/settings"
           component={() => <Shell><Settings /></Shell>}
+        />
+        <Route
+          path="/projects/:projectId/logs"
+          component={() => <Shell><LiveLogs /></Shell>}
         />
         <Route
           path="/issues/:issueId"

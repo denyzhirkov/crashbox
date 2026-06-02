@@ -126,20 +126,6 @@ async fn run_issues(
             status,
             limit,
         } => {
-            // Resolve --project=slug to project_id (Option) so users don't have to remember ids.
-            let project_id: Option<i64> = if let Some(slug) = project.as_deref() {
-                let id: Option<i64> =
-                    sqlx::query_scalar("SELECT id FROM projects WHERE slug = ?")
-                        .bind(slug)
-                        .fetch_optional(pool)
-                        .await?;
-                if id.is_none() {
-                    anyhow::bail!("no project with slug={slug:?}");
-                }
-                id
-            } else {
-                None
-            };
             #[derive(sqlx::FromRow)]
             struct Row {
                 id: i64,
@@ -149,6 +135,19 @@ async fn run_issues(
                 event_count: i64,
                 last_seen: String,
             }
+            // Resolve --project=slug to project_id (Option) so users don't have to remember ids.
+            let project_id: Option<i64> = if let Some(slug) = project.as_deref() {
+                let id: Option<i64> = sqlx::query_scalar("SELECT id FROM projects WHERE slug = ?")
+                    .bind(slug)
+                    .fetch_optional(pool)
+                    .await?;
+                if id.is_none() {
+                    anyhow::bail!("no project with slug={slug:?}");
+                }
+                id
+            } else {
+                None
+            };
             let mut qb = sqlx::QueryBuilder::new(
                 "SELECT i.id, p.slug AS project_slug, i.title, i.status, \
                         i.event_count, i.last_seen \
@@ -324,11 +323,7 @@ fn print_tsv<W: Write>(out: &mut W, headers: &[&str], rows: &[Vec<String>]) -> i
     Ok(())
 }
 
-fn print_pretty<W: Write>(
-    out: &mut W,
-    headers: &[&str],
-    rows: &[Vec<String>],
-) -> io::Result<()> {
+fn print_pretty<W: Write>(out: &mut W, headers: &[&str], rows: &[Vec<String>]) -> io::Result<()> {
     let mut widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
     for row in rows {
         for (i, cell) in row.iter().enumerate() {

@@ -32,15 +32,13 @@ pub async fn create(pool: &SqlitePool, user_id: i64) -> sqlx::Result<(String, Da
     let id = Ulid::new().to_string();
     let now = Utc::now();
     let expires = now + chrono::Duration::from_std(SESSION_TTL).unwrap_or_default();
-    sqlx::query(
-        "INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
-    )
-    .bind(&id)
-    .bind(user_id)
-    .bind(expires.to_rfc3339())
-    .bind(now.to_rfc3339())
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)")
+        .bind(&id)
+        .bind(user_id)
+        .bind(expires.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .execute(pool)
+        .await?;
     Ok((id, expires))
 }
 
@@ -98,10 +96,7 @@ pub fn build_set_cookie(session_id: &str, secure: bool, max_age: Duration) -> St
 
 pub fn build_clear_cookie(secure: bool) -> String {
     let secure_attr = if secure { "; Secure" } else { "" };
-    format!(
-        "{name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{secure_attr}",
-        name = COOKIE_NAME,
-    )
+    format!("{COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{secure_attr}")
 }
 
 fn cookie_from_header(header: &str, name: &str) -> Option<String> {
@@ -118,7 +113,10 @@ fn cookie_from_header(header: &str, name: &str) -> Option<String> {
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = AppError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         let raw = parts
             .headers
             .get("cookie")

@@ -25,9 +25,7 @@ pub async fn run(pool: &SqlitePool, cfg: &Config) -> anyhow::Result<()> {
 async fn bootstrap_admin(pool: &SqlitePool, admin: &AdminBootstrap) -> anyhow::Result<()> {
     let Some(email) = admin.email.as_deref() else {
         if users::count(pool).await? == 0 {
-            tracing::warn!(
-                "bootstrap: no admin user exists and CRASHBOX_ADMIN_EMAIL is not set"
-            );
+            tracing::warn!("bootstrap: no admin user exists and CRASHBOX_ADMIN_EMAIL is not set");
         }
         return Ok(());
     };
@@ -104,7 +102,7 @@ async fn bootstrap_project(
 fn slugify(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut prev_dash = false;
-    for ch in s.chars().flat_map(|c| c.to_lowercase()) {
+    for ch in s.chars().flat_map(char::to_lowercase) {
         if ch.is_ascii_alphanumeric() {
             out.push(ch);
             prev_dash = false;

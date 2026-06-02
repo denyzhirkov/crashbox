@@ -61,6 +61,7 @@ Crashbox is one ~40 MB Docker image, one SQLite file, no background services bey
 
 - **Sentry envelope ingestion** at `POST /api/:project_id/envelope[/]` — works with the official `@sentry/browser`, `@sentry/node`, and any SDK that uses the standard DSN/envelope format.
 - **Issue grouping** — same exception groups together even when error messages contain variable IDs / UUIDs / long hashes. Custom `fingerprint` in the event payload is honored.
+- **Live Logs** — a separate, ephemeral real-time log channel alongside errors. Stream ordinary application logs to a project and tail them live in the UI with filtering, grouping and a throughput sparkline. RAM-only, never written to disk. See below.
 - **Web UI** in SolidJS — Login, Projects, Issues list (with filters), Issue detail (stack trace + breadcrumbs + tags + user + request + raw JSON), Settings. Warm-dark default. Keyboard nav (`j`/`k`/`o`/`/`).
 - **Auth** — server-side sessions, argon2 password hashing, single admin user from env. No public signup.
 - **Retention job** — deletes old events while keeping the last N per issue. Issue summaries live forever.
@@ -70,8 +71,51 @@ See `docs/` for the details:
 
 - [`docs/protocol.md`](docs/protocol.md) — the exact Sentry ingest subset we accept
 - [`docs/configuration.md`](docs/configuration.md) — every `CRASHBOX_*` env var
+- [`docs/logs.md`](docs/logs.md) — Live Logs protocol, streaming, and limitations
 - [`docs/development.md`](docs/development.md) — local dev, tests, layout
 - [`docs/ui-design.md`](docs/ui-design.md) — UI brief / design notes
+
+---
+
+## Live Logs
+
+Crashbox tracks two separate things, and keeps them separate on purpose:
+
+| | **Events** | **Live Logs** |
+|---|---|---|
+| For | errors & crashes | ordinary "what's happening now" logs |
+| Parsed / grouped into issues | yes | no |
+| Stored | **persisted in SQLite** | **RAM only — never touches disk** |
+| Retention | retention job + history | last *N* lines per project, gone on restart |
+| Consumed via | the dashboard issue views | a live tail (SSE) |
+
+Live Logs is a real-time tail: open a project's log view, watch lines stream in, filter / group them, close it. It adds **no new infrastructure** — no queue, no extra datastore. Just an in-memory ring buffer plus a broadcast channel inside the same single binary. It is intentionally ephemeral and lossy: under load (or for a slow viewer) lines are dropped rather than queued, and a restart clears everything.
+
+### Sending logs
+
+Authenticated by your **DSN public key** — the same credential events already use, so the only thing that changes on your side is where logs are pointed. Two formats are accepted:
+
+1. **Dedicated endpoint** `POST /api/:project_id/logs` — a JSON array, a single object, or NDJSON:
+
+   ```bash
+   curl -X POST "http://localhost:8080/api/1/logs" \
+     -H "X-Sentry-Auth: Sentry sentry_key=YOUR_PUBLIC_KEY" \
+     --data-binary $'{"level":"info","message":"boot ok"}\n{"level":"warn","message":"slow query","logger":"db","attrs":{"ms":820}}\n'
+   ```
+
+   Recognized fields: `level` (`trace`→`fatal`, default `info`), `message` (or `msg`/`body`), `logger`, `ts` (ISO-8601 or epoch seconds), `trace_id`; everything else is collected into `attrs`. Bad lines are skipped, not fatal. Responds `202 {"accepted":N,"skipped":M}`.
+
+2. **Sentry `log` envelope item** — if your SDK already emits Sentry structured logs, they ride in on the normal `/envelope/` request and Crashbox routes the `log` items into Live Logs automatically.
+
+### Watching logs
+
+In the dashboard, open a project and click **live logs** (or `⌘K → view live logs`). The page connects over Server-Sent Events, replays recent scrollback, then streams live. You get a severity floor, free-text search across message/logger/attrs, **pause/resume** (with a buffered "N new lines" pill), **group-by-logger**, a 60-second throughput **sparkline**, and auto-scroll.
+
+### Turning it off
+
+Set `CRASHBOX_LIVE_LOGS_ENABLED=false` and the ingest + stream routes are not mounted and the UI hides the section entirely. All limits are bounded and configurable (`CRASHBOX_LIVE_LOG_*`, `CRASHBOX_MAX_LOG_*`) — see [`docs/configuration.md`](docs/configuration.md). Protocol details and the full list of limitations are in [`docs/logs.md`](docs/logs.md).
+
+> **Heads-up:** because logs live only in the receiving instance's RAM, Live Logs assumes the single-container deployment Crashbox is built for. Behind multiple replicas a viewer only sees the replica its stream landed on.
 
 ---
 
@@ -107,6 +151,10 @@ In both cases, the event should appear in the UI within a second.
 ---
 
 ## Status
+
+**1.4.0** — feature release: **Live Logs** — an ephemeral, RAM-only real-time log channel alongside error tracking. Dedicated `POST /api/:id/logs` ingest (JSON array / object / NDJSON) plus recognition of Sentry `log` envelope items, both DSN-authed; per-project in-memory ring buffer with a lossy broadcast; session-authed SSE stream at `GET /api/projects/:id/logs/stream` with server-side level/logger/text filters; a new dashboard page with severity floor, search, pause/resume, group-by-logger, and a throughput sparkline. Gated by `CRASHBOX_LIVE_LOGS_ENABLED`; new Prometheus metrics `crashbox_livelog_received_total` / `_dropped_total` / `_active_subscribers`. Nothing is persisted to disk. See [`docs/logs.md`](docs/logs.md).
+
+**1.3.0** — UI redesign to the Signal/Aurora design system (dark-only, violet→cyan accent, frosted-glass cards). No backend changes.
 
 **1.2.0** — multi-arch release: the Docker image now ships as a manifest list covering `linux/amd64` and `linux/arm64` (1.1.0 was arm64-only and failed with `exec format error` on amd64 hosts). Releases are now built and published by GitHub Actions on tag push. No application changes.
 

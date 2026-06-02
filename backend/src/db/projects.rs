@@ -162,13 +162,11 @@ pub async fn list_with_overview(pool: &SqlitePool) -> sqlx::Result<Vec<ProjectOv
 
 pub async fn rotate_key(pool: &SqlitePool, id: i64, new_public_key: &str) -> sqlx::Result<u64> {
     let now = Utc::now().to_rfc3339();
-    let result = sqlx::query(
-        "UPDATE projects SET public_key = ?, updated_at = ? WHERE id = ?",
-    )
-    .bind(new_public_key)
-    .bind(&now)
-    .bind(id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("UPDATE projects SET public_key = ?, updated_at = ? WHERE id = ?")
+        .bind(new_public_key)
+        .bind(&now)
+        .bind(id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected())
 }

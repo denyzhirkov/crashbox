@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import type { Issue, IssueFilters } from '../api/types'
 import { Breadcrumb, Page } from '../components/layout'
 import { fmt, Icon, SevCue, Sparkline, Voice } from '../components/primitives'
+import { useAuth } from '../lib/auth-context'
 import { loadViews, removeView, saveView, type SavedView } from '../lib/saved-views'
 import { relTime } from '../lib/time'
 
@@ -42,6 +43,8 @@ export default function IssuesPage() {
   const projectId = () => Number(params.projectId)
   const [searchParams, setSearchParams] = useSearchParams()
   const nav = useNavigate()
+  const { user } = useAuth()
+  const liveLogsEnabled = () => user()?.live_logs_enabled !== false
 
   const initialTagsFromUrl = (): Array<[string, string]> => {
     const raw = searchParams.tag
@@ -159,7 +162,12 @@ export default function IssuesPage() {
     <Page>
       <div style={{ display: 'flex', 'align-items': 'flex-start', 'justify-content': 'space-between', 'margin-bottom': '16px' }}>
         <Breadcrumb items={[{ label: 'projects', href: '/projects' }, { label: project()?.name ?? '…' }]} />
-        <A href={`/projects/${projectId()}/settings`} class="btn ghost sm">settings</A>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <Show when={liveLogsEnabled()}>
+            <A href={`/projects/${projectId()}/logs`} class="btn ghost sm">live logs</A>
+          </Show>
+          <A href={`/projects/${projectId()}/settings`} class="btn ghost sm">settings</A>
+        </div>
       </div>
 
       {/* unified search / filter */}

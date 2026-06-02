@@ -52,6 +52,19 @@ The DSN is logged once at startup using `INFO` level. Subsequent logs mask the p
 | `CRASHBOX_STORE_RAW_UNSUPPORTED_ITEMS` | `false` | Reserved. |
 | `CRASHBOX_ENABLE_LEGACY_STORE_ENDPOINT` | `false` | Reserved; `/api/:project_id/store/` not in MVP. |
 
+## Live Logs
+
+Ephemeral, RAM-only real-time log streaming, separate from durable events. Nothing is persisted — see `docs/logs.md` for the protocol and limitations.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `CRASHBOX_LIVE_LOGS_ENABLED` | `true` | Master switch. When `false`, the ingest + stream routes are not mounted and the UI hides the section. |
+| `CRASHBOX_LIVE_LOG_BUFFER_PER_PROJECT` | `1000` | Per-project ring buffer size (scrollback replayed to a freshly-connected stream). Held in RAM, lost on restart. |
+| `CRASHBOX_MAX_LOG_BATCH_BYTES` | `262144` (256 KiB) | Body cap for `POST /api/:project_id/logs`; enforced via `DefaultBodyLimit` before parsing. |
+| `CRASHBOX_LIVE_LOG_MESSAGE_MAX_BYTES` | `16384` (16 KiB) | Per-record message cap; longer messages are truncated on a UTF-8 boundary. |
+| `CRASHBOX_MAX_LOGS_PER_MINUTE_PER_PROJECT` | `6000` | Per-project token bucket for log ingest (100/sec). Exceeded → `429` with `Retry-After`. |
+| `CRASHBOX_MAX_LOG_SUBSCRIBERS_PER_PROJECT` | `50` | Cap on concurrent SSE subscribers per project; over the cap → `429`. Guards against leaked streams. |
+
 ## Retention
 
 | Variable | Default | Notes |

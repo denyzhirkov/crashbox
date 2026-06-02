@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use super::{Notification, NotifyError, Notifier};
+use super::{Notification, Notifier, NotifyError};
 
 pub struct TelegramNotifier {
     token: String,
@@ -56,11 +56,7 @@ impl Notifier for TelegramNotifier {
             "text": format_body(msg),
             "disable_web_page_preview": true,
         });
-        let resp = reqwest::Client::new()
-            .post(url)
-            .json(&body)
-            .send()
-            .await?;
+        let resp = reqwest::Client::new().post(url).json(&body).send().await?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();

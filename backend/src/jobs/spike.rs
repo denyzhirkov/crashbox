@@ -61,7 +61,7 @@ async fn run_loop(
                     tracing::error!(error = %e, "spike sweep failed");
                 }
             }
-            _ = cancel.cancelled() => {
+            () = cancel.cancelled() => {
                 tracing::info!("spike: shutdown signal received, exiting");
                 return;
             }

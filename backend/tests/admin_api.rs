@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! End-to-end tests for the admin/auth/projects/issues HTTP API.
 
 use crashbox::app_state::AppState;
@@ -15,7 +16,9 @@ async fn spawn_app() -> SocketAddr {
     let db_path = tmp.path().join("crashbox.db");
 
     let cfg = {
-        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         std::env::set_var(
             "CRASHBOX_DATABASE_URL",
             format!("sqlite://{}", db_path.display()),
@@ -30,12 +33,16 @@ async fn spawn_app() -> SocketAddr {
     };
     let pool = db::connect(&cfg.database_url).await.expect("pool");
     db::migrate(&pool).await.expect("migrate");
-    crashbox::bootstrap::run(&pool, &cfg).await.expect("bootstrap");
+    crashbox::bootstrap::run(&pool, &cfg)
+        .await
+        .expect("bootstrap");
 
     let state = AppState::new(cfg, pool, crashbox::metrics_layer::MetricsHandle::dummy());
     let app = http::routes::build(state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("listen");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listen");
     let addr = listener.local_addr().expect("addr");
     Box::leak(Box::new(tmp));
     tokio::spawn(async move {
@@ -70,7 +77,11 @@ async fn auth_login_me_logout_flow() {
     let c = client();
 
     // Anonymous /me → 401
-    let anon = c.get(format!("http://{addr}/api/auth/me")).send().await.unwrap();
+    let anon = c
+        .get(format!("http://{addr}/api/auth/me"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(anon.status().as_u16(), 401);
 
     // Wrong password → 401
@@ -88,17 +99,29 @@ async fn auth_login_me_logout_flow() {
     assert_eq!(body["user"]["is_admin"], true);
 
     // /me succeeds with cookie
-    let me = c.get(format!("http://{addr}/api/auth/me")).send().await.unwrap();
+    let me = c
+        .get(format!("http://{addr}/api/auth/me"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(me.status().as_u16(), 200);
     let me_json: Value = me.json().await.unwrap();
     assert_eq!(me_json["email"], "admin@example.com");
 
     // Logout
-    let lo = c.post(format!("http://{addr}/api/auth/logout")).send().await.unwrap();
+    let lo = c
+        .post(format!("http://{addr}/api/auth/logout"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(lo.status().as_u16(), 200);
 
     // After logout, /me → 401 again
-    let me2 = c.get(format!("http://{addr}/api/auth/me")).send().await.unwrap();
+    let me2 = c
+        .get(format!("http://{addr}/api/auth/me"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(me2.status().as_u16(), 401);
 }
 
@@ -194,14 +217,21 @@ async fn issues_list_includes_24h_sparkline_buckets() {
         .await
         .unwrap();
     assert_eq!(issues.len(), 1);
-    let buckets = issues[0]["last_24h_buckets"].as_array().expect("sparkline array");
+    let buckets = issues[0]["last_24h_buckets"]
+        .as_array()
+        .expect("sparkline array");
     assert_eq!(buckets.len(), 24, "must be exactly 24 hour buckets");
-    let total: i64 = buckets.iter().filter_map(|v| v.as_i64()).sum();
+    let total: i64 = buckets.iter().filter_map(Value::as_i64).sum();
     assert_eq!(total, 3);
-    assert_eq!(buckets[23].as_i64().unwrap(), 3, "current hour holds all 3 events");
+    assert_eq!(
+        buckets[23].as_i64().unwrap(),
+        3,
+        "current hour holds all 3 events"
+    );
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn issues_filter_and_resolve_flow() {
     let addr = spawn_app().await;
     let c = client();
@@ -271,7 +301,9 @@ async fn issues_filter_and_resolve_flow() {
 
     // Text query filter narrows down.
     let only_range: Vec<Value> = c
-        .get(format!("http://{addr}/api/projects/1/issues?query=RangeError"))
+        .get(format!(
+            "http://{addr}/api/projects/1/issues?query=RangeError"
+        ))
         .send()
         .await
         .unwrap()

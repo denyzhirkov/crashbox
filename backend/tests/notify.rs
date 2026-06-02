@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Integration test for A1 webhooks: spin up Crashbox + a tiny axum receiver, point
 //! `CRASHBOX_GENERIC_WEBHOOK_URL` at the receiver, push events through the ingest endpoint, and
 //! assert which notifications the receiver got.
@@ -46,15 +47,14 @@ async fn spawn_webhook_receiver() -> (SocketAddr, ReceivedNotifications) {
     (addr, inbox)
 }
 
-async fn spawn_crashbox(
-    webhook_url: &str,
-    max_per_minute: &str,
-) -> (SocketAddr, sqlx::SqlitePool) {
+async fn spawn_crashbox(webhook_url: &str, max_per_minute: &str) -> (SocketAddr, sqlx::SqlitePool) {
     let tmp = tempfile::tempdir().unwrap();
     let db_path = tmp.path().join("cb.db");
 
     let cfg = {
-        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         std::env::set_var(
             "CRASHBOX_DATABASE_URL",
             format!("sqlite://{}", db_path.display()),
@@ -78,7 +78,11 @@ async fn spawn_crashbox(
     db::migrate(&pool).await.unwrap();
     crashbox::bootstrap::run(&pool, &cfg).await.unwrap();
 
-    let state = AppState::new(cfg, pool.clone(), crashbox::metrics_layer::MetricsHandle::dummy());
+    let state = AppState::new(
+        cfg,
+        pool.clone(),
+        crashbox::metrics_layer::MetricsHandle::dummy(),
+    );
     let app = http_mod::routes::build(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -145,10 +149,7 @@ async fn notifies_on_new_issue_then_silent_on_followups() {
     assert_eq!(messages[0]["project_slug"], "notify-test");
     assert_eq!(messages[0]["issue_title"], "X: boom");
     assert_eq!(messages[0]["event_count"], 1);
-    assert!(messages[0]["link"]
-        .as_str()
-        .unwrap()
-        .ends_with("/issues/1"));
+    assert!(messages[0]["link"].as_str().unwrap().ends_with("/issues/1"));
 }
 
 #[tokio::test]
@@ -189,7 +190,11 @@ async fn notifies_on_reopen_after_manual_resolve() {
     drain().await;
 
     let messages = received.0.lock().unwrap().clone();
-    assert_eq!(messages.len(), 2, "expected NewIssue + Reopened; got {messages:?}");
+    assert_eq!(
+        messages.len(),
+        2,
+        "expected NewIssue + Reopened; got {messages:?}"
+    );
     assert_eq!(messages[0]["kind"], "new_issue");
     assert_eq!(messages[1]["kind"], "reopened");
     assert_eq!(messages[1]["event_count"], 2);
@@ -216,5 +221,9 @@ async fn rate_limit_drops_excess_notifications() {
     drain().await;
 
     let messages = received.0.lock().unwrap().clone();
-    assert_eq!(messages.len(), 3, "rate limit must cap at 3; got {messages:?}");
+    assert_eq!(
+        messages.len(),
+        3,
+        "rate limit must cap at 3; got {messages:?}"
+    );
 }

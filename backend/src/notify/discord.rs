@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use super::{Kind, Notification, NotifyError, Notifier};
+use super::{Kind, Notification, Notifier, NotifyError};
 
 pub struct DiscordNotifier {
     webhook_url: String,
@@ -16,9 +16,9 @@ impl DiscordNotifier {
 /// Discord colour conventions: red for new issue, amber for re-open / spike.
 fn color(kind: Kind) -> u32 {
     match kind {
-        Kind::NewIssue => 0x_E3_40_2D, // matches Crashbox crash-red
+        // crash-red — a new issue or a spike is bad news
+        Kind::NewIssue | Kind::Spike => 0x_E3_40_2D,
         Kind::Reopened => 0x_F0_B4_00, // amber
-        Kind::Spike => 0x_E3_40_2D,    // crash-red — spikes are bad news
     }
 }
 

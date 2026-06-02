@@ -88,6 +88,16 @@ export const api = {
   events: {
     get: (id: number) => req<EventDetail>(`/api/events/${id}`),
   },
+  livelog: {
+    // The live-log stream is consumed via EventSource, not fetch — this just builds the URL.
+    // Cookies ride along automatically on same-origin EventSource requests.
+    streamUrl: (projectId: number, opts: { level?: string } = {}) => {
+      const qs = new URLSearchParams()
+      if (opts.level) qs.set('level', opts.level)
+      const suffix = qs.toString() ? `?${qs}` : ''
+      return `/api/projects/${projectId}/logs/stream${suffix}`
+    },
+  },
 }
 
 // Re-export so callers only need one import path.
@@ -97,6 +107,8 @@ export type {
   EventRow,
   Issue,
   IssueFilters,
+  LogLevel,
+  LogRecord,
   Project,
   ProjectOverview,
   User,

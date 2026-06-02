@@ -81,7 +81,8 @@ crashbox/
 
 ## Testing
 
-- `cargo test --workspace` is the gate. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all -- --check` must pass.
+- `cargo test --workspace` is the gate. `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all -- --check` must pass. All three are enforced on every push/PR by `.github/workflows/ci.yml`, plus the frontend `pnpm build` (tsc + bundle).
+- The Rust toolchain is **pinned** in `backend/rust-toolchain.toml`; CI and local use the same compiler and lint set. Bump it deliberately and fix any new lints in the same change. `unwrap`/`expect` are forbidden in production code (warn-as-error) but allowed in tests via the crate-root / per-test-file `allow`; lint policy lives in `backend/Cargo.toml [lints.clippy]`.
 - Unit tests next to the code (`#[cfg(test)] mod tests`) for pure logic — envelope framing, DSN parse, message normalization, fingerprint stability.
 - Integration tests in `backend/tests/` for the ingestion path: spin up the app against a temp SQLite file, POST a real captured envelope, assert on stored event + issue.
 - **Fixture envelopes** from real Sentry SDKs (browser, Node) live under `backend/tests/fixtures/envelopes/`. New protocol behavior requires a fixture.

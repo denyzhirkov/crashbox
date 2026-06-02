@@ -51,14 +51,16 @@ impl Dsn {
             return Err(DsnError::MissingPublicKey);
         }
 
-        let (host, project) = after_at
-            .split_once('/')
-            .ok_or(DsnError::MissingProjectId)?;
+        let (host, project) = after_at.split_once('/').ok_or(DsnError::MissingProjectId)?;
         if host.is_empty() {
             return Err(DsnError::MissingHost);
         }
         // Project segment may have trailing slash or query.
-        let project_clean = project.trim_end_matches('/').split('?').next().unwrap_or("");
+        let project_clean = project
+            .trim_end_matches('/')
+            .split('?')
+            .next()
+            .unwrap_or("");
         if project_clean.is_empty() {
             return Err(DsnError::MissingProjectId);
         }

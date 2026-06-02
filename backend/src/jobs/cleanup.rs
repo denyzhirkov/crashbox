@@ -40,7 +40,7 @@ async fn run_loop(pool: SqlitePool, retention: Arc<Retention>, cancel: Cancellat
                     tracing::error!(error = %e, "retention sweep failed");
                 }
             }
-            _ = cancel.cancelled() => {
+            () = cancel.cancelled() => {
                 tracing::info!("retention: shutdown signal received, exiting");
                 return;
             }

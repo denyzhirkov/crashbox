@@ -8,10 +8,12 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::app_state::AppState;
-use crate::db::{events, issues, projects};
 use crate::db::issues::UpsertOutcome;
+use crate::db::{events, issues};
+use crate::http::dsn_auth::{self, DsnAuthError};
+use crate::http::livelog;
 use crate::notify::{Kind as NotifyKind, Notification};
-use crate::sentry::{auth, envelope, grouping, normalize};
+use crate::sentry::{envelope, grouping, normalize};
 
 #[derive(Debug, Deserialize)]
 pub struct IngestQuery {
@@ -24,6 +26,9 @@ pub struct IngestQuery {
 }
 
 /// POST /api/:project_id/envelope[/]
+// Linear ingest pipeline (auth → limit → parse → per-item store); reads top-to-bottom, so the
+// length is clarity, not tangle.
+#[allow(clippy::too_many_lines)]
 pub async fn envelope_endpoint(
     State(state): State<AppState>,
     Path(project_id): Path<i64>,
@@ -45,35 +50,36 @@ pub async fn envelope_endpoint(
     }
 
     let auth_header = headers.get("x-sentry-auth").and_then(|v| v.to_str().ok());
-    let raw_query_key = q.sentry_key.as_deref();
-    let key = auth::extract_sentry_key(auth_header, None)
-        .or_else(|| raw_query_key.map(str::to_string));
-    let Some(public_key) = key else {
-        metrics::counter!("crashbox_events_dropped_total", "reason" => "bad_key").increment(1);
-        return refuse(StatusCode::UNAUTHORIZED, "missing sentry_key");
-    };
-
-    let project = match projects::find_by_public_key(&state.db, &public_key).await {
-        Ok(Some(p)) => p,
-        Ok(None) => {
-            metrics::counter!("crashbox_events_dropped_total", "reason" => "bad_key")
-                .increment(1);
+    let project = match dsn_auth::resolve_project(
+        &state.db,
+        project_id,
+        auth_header,
+        q.sentry_key.as_deref(),
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(DsnAuthError::MissingKey) => {
+            metrics::counter!("crashbox_events_dropped_total", "reason" => "bad_key").increment(1);
+            return refuse(StatusCode::UNAUTHORIZED, "missing sentry_key");
+        }
+        Err(DsnAuthError::UnknownKey) => {
+            metrics::counter!("crashbox_events_dropped_total", "reason" => "bad_key").increment(1);
             return refuse(StatusCode::UNAUTHORIZED, "unknown sentry_key");
         }
-        Err(e) => {
+        Err(DsnAuthError::ProjectMismatch) => {
+            metrics::counter!("crashbox_events_dropped_total", "reason" => "bad_key").increment(1);
+            return refuse(
+                StatusCode::UNAUTHORIZED,
+                "sentry_key does not match project_id in path",
+            );
+        }
+        Err(DsnAuthError::Db(e)) => {
             tracing::error!(error = %e, "db error looking up project");
-            metrics::counter!("crashbox_events_dropped_total", "reason" => "db_error")
-                .increment(1);
+            metrics::counter!("crashbox_events_dropped_total", "reason" => "db_error").increment(1);
             return refuse(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
-    if project.id != project_id {
-        metrics::counter!("crashbox_events_dropped_total", "reason" => "bad_key").increment(1);
-        return refuse(
-            StatusCode::UNAUTHORIZED,
-            "sentry_key does not match project_id in path",
-        );
-    }
 
     metrics::counter!(
         "crashbox_envelope_bytes_total",
@@ -117,6 +123,20 @@ pub async fn envelope_endpoint(
     let max_event_bytes = state.config.ingest.max_event_bytes;
 
     for item in &env.items {
+        // Sentry structured-log items feed the ephemeral Live Logs channel, never the DB.
+        if item.header.ty.as_deref() == Some("log") {
+            if state.config.livelog.enabled {
+                let published = livelog::ingest_log_item(&state, project.id, &item.payload);
+                if published > 0 {
+                    metrics::counter!(
+                        "crashbox_livelog_received_total",
+                        "project" => project.slug.clone()
+                    )
+                    .increment(published as u64);
+                }
+            }
+            continue;
+        }
         if !item.is_event() {
             tracing::debug!(
                 ty = item.header.ty.as_deref().unwrap_or("unknown"),
@@ -130,24 +150,25 @@ pub async fn envelope_endpoint(
                 "event exceeds CRASHBOX_MAX_EVENT_BYTES",
             );
         }
-        let raw_str = match std::str::from_utf8(&item.payload) {
-            Ok(s) => s,
-            Err(_) => return refuse(StatusCode::BAD_REQUEST, "event payload is not valid UTF-8"),
+        let Ok(raw_str) = std::str::from_utf8(&item.payload) else {
+            return refuse(StatusCode::BAD_REQUEST, "event payload is not valid UTF-8");
         };
-        let parsed: Value = match serde_json::from_str(raw_str) {
-            Ok(v) => v,
-            Err(_) => return refuse(StatusCode::BAD_REQUEST, "event payload is not valid JSON"),
+        let Ok(parsed) = serde_json::from_str::<Value>(raw_str) else {
+            return refuse(StatusCode::BAD_REQUEST, "event payload is not valid JSON");
         };
 
         let mut ev = normalize::from_value(&parsed);
         // Envelope header may carry event_id when the event payload omits it.
         if ev.event_id.is_none() {
-            ev.event_id = env.header.event_id.clone();
+            ev.event_id.clone_from(&env.header.event_id);
         }
 
         let fp = grouping::fingerprint(&ev);
         let title = normalize::title_for(&ev);
-        let event_ts = ev.timestamp.clone().unwrap_or_else(|| Utc::now().to_rfc3339());
+        let event_ts = ev
+            .timestamp
+            .clone()
+            .unwrap_or_else(|| Utc::now().to_rfc3339());
 
         match store_event(&state, project.id, &ev, &fp, &title, &event_ts, raw_str).await {
             Ok((issue_id, outcome, new_event_count)) => {
@@ -240,11 +261,10 @@ async fn store_event(
     let event_row_id =
         events::insert_full(tx.acquire(), project_id, Some(issue_id), ev, raw_json).await?;
     issues::bump_after_event(tx.acquire(), issue_id, event_row_id, timestamp_iso).await?;
-    let new_event_count: i64 =
-        sqlx::query_scalar("SELECT event_count FROM issues WHERE id = ?")
-            .bind(issue_id)
-            .fetch_one(tx.acquire())
-            .await?;
+    let new_event_count: i64 = sqlx::query_scalar("SELECT event_count FROM issues WHERE id = ?")
+        .bind(issue_id)
+        .fetch_one(tx.acquire())
+        .await?;
     tx.commit().await?;
     Ok((issue_id, outcome, new_event_count))
 }

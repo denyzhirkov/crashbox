@@ -33,6 +33,7 @@ pub struct Config {
     pub ui: UiConfig,
     pub security: SecurityConfig,
     pub notify: NotifyConfig,
+    pub livelog: LiveLogConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -110,6 +111,23 @@ pub struct NotifyConfig {
     pub max_per_minute: u32,
 }
 
+/// Live Logs — ephemeral, RAM-only real-time log streaming, separate from durable events.
+/// Nothing here is persisted: a per-project ring buffer holds recent records for scrollback and
+/// evaporates on restart.
+#[derive(Debug, Clone)]
+pub struct LiveLogConfig {
+    pub enabled: bool,
+    /// Ring buffer size per project (scrollback served to a freshly-connected stream).
+    pub buffer_per_project: usize,
+    /// Max accepted body size for the `/logs` ingest endpoint, checked before allocation.
+    pub max_batch_bytes: usize,
+    /// Per-record message cap; longer messages are truncated on a char boundary.
+    pub message_max_bytes: usize,
+    pub max_per_minute_per_project: u32,
+    /// Cap on concurrent SSE subscribers per project — guards against leaked streams.
+    pub max_subscribers_per_project: usize,
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         Ok(Self {
@@ -141,7 +159,10 @@ impl Config {
                     "CRASHBOX_MAX_EVENTS_PER_MINUTE_PER_PROJECT",
                     "600",
                 )?,
-                accept_unknown_item_types: parse_env("CRASHBOX_ACCEPT_UNKNOWN_ITEM_TYPES", "false")?,
+                accept_unknown_item_types: parse_env(
+                    "CRASHBOX_ACCEPT_UNKNOWN_ITEM_TYPES",
+                    "false",
+                )?,
                 store_raw_unsupported_items: parse_env(
                     "CRASHBOX_STORE_RAW_UNSUPPORTED_ITEMS",
                     "false",
@@ -181,6 +202,20 @@ impl Config {
                 generic_webhook_url: env_opt("CRASHBOX_GENERIC_WEBHOOK_URL"),
                 max_per_minute: parse_env("CRASHBOX_NOTIFY_MAX_PER_MINUTE", "30")?,
             },
+            livelog: LiveLogConfig {
+                enabled: parse_env("CRASHBOX_LIVE_LOGS_ENABLED", "true")?,
+                buffer_per_project: parse_env("CRASHBOX_LIVE_LOG_BUFFER_PER_PROJECT", "1000")?,
+                max_batch_bytes: parse_env("CRASHBOX_MAX_LOG_BATCH_BYTES", "262144")?,
+                message_max_bytes: parse_env("CRASHBOX_LIVE_LOG_MESSAGE_MAX_BYTES", "16384")?,
+                max_per_minute_per_project: parse_env(
+                    "CRASHBOX_MAX_LOGS_PER_MINUTE_PER_PROJECT",
+                    "6000",
+                )?,
+                max_subscribers_per_project: parse_env(
+                    "CRASHBOX_MAX_LOG_SUBSCRIBERS_PER_PROJECT",
+                    "50",
+                )?,
+            },
         })
     }
 
@@ -218,7 +253,9 @@ mod tests {
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn with_env<F: FnOnce()>(vars: &[(&str, Option<&str>)], f: F) {
-        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let prev: Vec<_> = vars.iter().map(|(k, _)| (*k, env::var(*k).ok())).collect();
         for (k, v) in vars {
             match v {

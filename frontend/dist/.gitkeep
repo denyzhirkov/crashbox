@@ -1,0 +1,2 @@
+# Keeps frontend/dist/ present on a fresh checkout so rust-embed (backend/src/http/assets.rs)
+# compiles before the frontend is built. The real build output overwrites this dir.

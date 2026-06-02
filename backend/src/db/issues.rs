@@ -63,9 +63,7 @@ pub async fn list(
     f: &IssueFilters,
 ) -> sqlx::Result<Vec<Issue>> {
     let now_iso = Utc::now().to_rfc3339();
-    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
-        "SELECT DISTINCT issues.* FROM issues ",
-    );
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("SELECT DISTINCT issues.* FROM issues ");
     let needs_event_join = f.environment.is_some() || f.release.is_some();
     if needs_event_join {
         qb.push("JOIN events ON events.issue_id = issues.id ");
@@ -211,13 +209,12 @@ pub async fn set_snooze(
     snoozed_until: Option<&str>,
 ) -> sqlx::Result<u64> {
     let now = Utc::now().to_rfc3339();
-    let result =
-        sqlx::query("UPDATE issues SET snoozed_until = ?, updated_at = ? WHERE id = ?")
-            .bind(snoozed_until)
-            .bind(&now)
-            .bind(id)
-            .execute(pool)
-            .await?;
+    let result = sqlx::query("UPDATE issues SET snoozed_until = ?, updated_at = ? WHERE id = ?")
+        .bind(snoozed_until)
+        .bind(&now)
+        .bind(id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected())
 }
 
@@ -268,13 +265,11 @@ pub async fn upsert(
         }
 
         if status == "resolved" {
-            sqlx::query(
-                "UPDATE issues SET status = 'unresolved', updated_at = ? WHERE id = ?",
-            )
-            .bind(&now)
-            .bind(id)
-            .execute(&mut *conn)
-            .await?;
+            sqlx::query("UPDATE issues SET status = 'unresolved', updated_at = ? WHERE id = ?")
+                .bind(&now)
+                .bind(id)
+                .execute(&mut *conn)
+                .await?;
             return Ok((id, UpsertOutcome::Reopened));
         }
         return Ok((id, UpsertOutcome::Existing));

@@ -129,7 +129,9 @@ pub async fn dsn(
         .await?
         .ok_or(AppError::NotFound)?;
     let url = Dsn::build(&state.config.public_url, &project.public_key, project.id);
-    Ok(Json(json!({ "dsn": url, "public_key": project.public_key })))
+    Ok(Json(
+        json!({ "dsn": url, "public_key": project.public_key }),
+    ))
 }
 
 /// POST /api/projects/:id/rotate-key (admin only)
@@ -154,7 +156,7 @@ pub async fn rotate_key(
 fn slugify(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut prev_dash = false;
-    for ch in s.chars().flat_map(|c| c.to_lowercase()) {
+    for ch in s.chars().flat_map(char::to_lowercase) {
         if ch.is_ascii_alphanumeric() {
             out.push(ch);
             prev_dash = false;

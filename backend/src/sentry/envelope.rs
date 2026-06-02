@@ -211,7 +211,10 @@ mod tests {
     #[test]
     fn bad_envelope_header() {
         let raw = "not-json\n{\"type\":\"event\"}\n{}\n";
-        assert!(matches!(parse(&body(raw)), Err(EnvelopeError::BadHeader(_))));
+        assert!(matches!(
+            parse(&body(raw)),
+            Err(EnvelopeError::BadHeader(_))
+        ));
     }
 
     #[test]

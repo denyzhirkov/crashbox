@@ -50,10 +50,7 @@ mod tests {
     #[test]
     fn parses_full_header() {
         let h = "Sentry sentry_version=7, sentry_key=abcdef, sentry_client=sentry.javascript.node/7.0.0";
-        assert_eq!(
-            extract_sentry_key(Some(h), None).as_deref(),
-            Some("abcdef")
-        );
+        assert_eq!(extract_sentry_key(Some(h), None).as_deref(), Some("abcdef"));
     }
 
     #[test]

@@ -85,18 +85,8 @@ mod tests {
     #[test]
     fn exception_value_with_variable_id_groups_together() {
         // The numeric id should be normalized away, so these two group together.
-        let a = ev_exc(
-            "node",
-            "DbError",
-            "row 12345678 not found",
-            "f@:repo.js:1",
-        );
-        let b = ev_exc(
-            "node",
-            "DbError",
-            "row 98765432 not found",
-            "f@:repo.js:1",
-        );
+        let a = ev_exc("node", "DbError", "row 12345678 not found", "f@:repo.js:1");
+        let b = ev_exc("node", "DbError", "row 98765432 not found", "f@:repo.js:1");
         assert_eq!(fingerprint(&a), fingerprint(&b));
     }
 
@@ -111,9 +101,11 @@ mod tests {
 
     #[test]
     fn message_only_grouping() {
-        let mut a = NormalizedEvent::default();
-        a.platform = Some("python".into());
-        a.message = Some("connection timed out after 5000ms".into());
+        let a = NormalizedEvent {
+            platform: Some("python".into()),
+            message: Some("connection timed out after 5000ms".into()),
+            ..Default::default()
+        };
         let mut b = a.clone();
         b.message = Some("connection timed out after 5000ms".into());
         let mut c = a.clone();

@@ -11,7 +11,7 @@ use sqlx::{Sqlite, SqlitePool};
 // Sqlite import is kept — used in PoolConnection<Sqlite> below.
 
 pub async fn connect(database_url: &str) -> anyhow::Result<SqlitePool> {
-    let opts = parse_sqlite_options(database_url)?;
+    let opts = parse_sqlite_options(database_url);
     let pool = SqlitePoolOptions::new()
         .max_connections(8)
         .connect_with(opts)
@@ -50,6 +50,9 @@ pub struct WriteTx {
     committed: bool,
 }
 
+// The two `expect`s below assert an internal invariant (commit/acquire after the tx is finished is
+// a programmer error, never runtime input) — not the malformed-input path the no-panic rule guards.
+#[allow(clippy::expect_used)]
 impl WriteTx {
     pub async fn commit(mut self) -> sqlx::Result<()> {
         let mut conn = self.conn.take().expect("commit on already-finished tx");
@@ -63,8 +66,7 @@ impl WriteTx {
     /// `.begin()` on it — they'd nest into a SAVEPOINT and confuse the lock model.
     pub fn acquire(&mut self) -> &mut sqlx::SqliteConnection {
         self.conn
-            .as_mut()
-            .map(|c| &mut **c)
+            .as_deref_mut()
             .expect("acquire on already-finished tx")
     }
 }
@@ -85,13 +87,12 @@ impl Drop for WriteTx {
     }
 }
 
-
 pub async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(pool).await?;
     Ok(())
 }
 
-fn parse_sqlite_options(url: &str) -> anyhow::Result<SqliteConnectOptions> {
+fn parse_sqlite_options(url: &str) -> SqliteConnectOptions {
     let raw = url
         .strip_prefix("sqlite://")
         .or_else(|| url.strip_prefix("sqlite:"))
@@ -103,11 +104,10 @@ fn parse_sqlite_options(url: &str) -> anyhow::Result<SqliteConnectOptions> {
         }
     }
 
-    let opts = SqliteConnectOptions::new()
+    SqliteConnectOptions::new()
         .filename(raw)
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
         .busy_timeout(std::time::Duration::from_secs(15))
-        .foreign_keys(true);
-    Ok(opts)
+        .foreign_keys(true)
 }

@@ -140,13 +140,10 @@ pub async fn patch(
     }
 
     if let Some(snooze) = &body.snooze {
-        let snoozed_until = match parse_snooze(snooze) {
-            Some(v) => v,
-            None => {
-                return Err(AppError::BadRequest(format!(
-                    "snooze must be one of 1h, 1d, 1w, forever, wake; got {snooze:?}"
-                )));
-            }
+        let Some(snoozed_until) = parse_snooze(snooze) else {
+            return Err(AppError::BadRequest(format!(
+                "snooze must be one of 1h, 1d, 1w, forever, wake; got {snooze:?}"
+            )));
         };
         let affected = issues::set_snooze(&state.db, id, snoozed_until.as_deref()).await?;
         if affected == 0 {
