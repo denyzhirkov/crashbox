@@ -1,7 +1,7 @@
 import { useParams } from '@solidjs/router'
 import { createResource, createSignal, Show } from 'solid-js'
 import { api } from '../api/client'
-import { Breadcrumb, Page } from '../components/layout'
+import { Breadcrumb, Page, ProjectNav } from '../components/layout'
 import { CopyBlock, PlatformTag } from '../components/primitives'
 import { useAuth } from '../lib/auth-context'
 
@@ -27,13 +27,16 @@ export default function SettingsPage() {
 
   return (
     <Page>
-      <Breadcrumb
-        items={[
-          { label: 'projects', href: '/projects' },
-          { label: project()?.name ?? '…', href: `/projects/${projectId()}/issues` },
-          { label: 'settings' },
-        ]}
-      />
+      <div style={{ display: 'flex', 'align-items': 'flex-start', 'justify-content': 'space-between', 'margin-bottom': '16px' }}>
+        <Breadcrumb
+          items={[
+            { label: 'projects', href: '/projects' },
+            { label: project()?.name ?? '…', href: `/projects/${projectId()}/issues` },
+            { label: 'settings' },
+          ]}
+        />
+        <ProjectNav projectId={projectId()} current="settings" />
+      </div>
 
       <h1 class="mono" style={{ 'font-size': '22px', 'font-weight': 600, 'margin-bottom': '4px' }}>{project()?.name ?? '…'}</h1>
       <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', 'margin-bottom': '28px' }}>

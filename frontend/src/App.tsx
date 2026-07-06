@@ -11,6 +11,7 @@ const IssueDetail = lazy(() => import('./pages/IssueDetail'))
 const Settings = lazy(() => import('./pages/Settings'))
 const LiveLogs = lazy(() => import('./pages/LiveLogs'))
 const Heartbeats = lazy(() => import('./pages/Heartbeats'))
+const Tokens = lazy(() => import('./pages/Tokens'))
 
 function Shell(props: { children: any }) {
   return (
@@ -43,6 +44,7 @@ export default function App() {
           path="/projects/:projectId/heartbeats"
           component={() => <Shell><Heartbeats /></Shell>}
         />
+        <Route path="/tokens" component={() => <Shell><Tokens /></Shell>} />
         <Route
           path="/issues/:issueId"
           component={() => <Shell><IssueDetail /></Shell>}

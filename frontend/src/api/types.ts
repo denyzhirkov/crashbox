@@ -93,6 +93,20 @@ export type IssueFilters = {
 
 export type SnoozeAction = '1h' | '1d' | '1w' | 'forever' | 'wake'
 
+/** Personal API token metadata. The secret itself exists client-side only in the create
+ *  response (`CreatedToken.token`) — it is never listed or retrievable again. */
+export type ApiToken = {
+  id: number
+  user_id: number
+  name: string
+  token_prefix: string
+  created_at: string
+  expires_at: string | null
+  last_used_at: string | null
+}
+
+export type CreatedToken = ApiToken & { token: string }
+
 export type HeartbeatStatus = 'pending' | 'up' | 'down' | 'paused'
 
 /** Dead-man's-switch monitor: a cron/service pings `ping_url` every `period_seconds`; silence

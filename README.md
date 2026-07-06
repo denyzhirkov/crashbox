@@ -22,10 +22,10 @@ docker run -d \
   -e CRASHBOX_ADMIN_PASSWORD=change-me-on-first-boot \
   -e CRASHBOX_PROJECT_NAME=my-app \
   -e CRASHBOX_PUBLIC_URL=http://localhost:8080 \
-  denyzhirkov/crashbox:1.5.0
+  denyzhirkov/crashbox:1.6.0
 ```
 
-Image: [`denyzhirkov/crashbox`](https://hub.docker.com/r/denyzhirkov/crashbox) on Docker Hub (~40 MB, distroless, non-root, multi-arch `linux/amd64` + `linux/arm64`). Pin to a specific tag (`:1.5.0`) in production; `:latest` follows the most recent release.
+Image: [`denyzhirkov/crashbox`](https://hub.docker.com/r/denyzhirkov/crashbox) on Docker Hub (~40 MB, distroless, non-root, multi-arch `linux/amd64` + `linux/arm64`). Pin to a specific tag (`:1.6.0`) in production; `:latest` follows the most recent release.
 
 Watch the logs for the bootstrap line — it prints the DSN exactly once:
 
@@ -65,6 +65,7 @@ Crashbox is one ~40 MB Docker image, one SQLite file, no background services bey
 - **Heartbeats (dead-man's switch)** — register a cron job or service that must ping you every N seconds; if the ping doesn't arrive in time, Crashbox flips the monitor to `down` and alerts. One `curl` at the end of the cron line is the whole integration. See below.
 - **Web UI** in SolidJS — Login, Projects, Issues list (with filters), Issue detail (stack trace + breadcrumbs + tags + user + request + raw JSON), Settings. Warm-dark default. Keyboard nav (`j`/`k`/`o`/`/`).
 - **Auth** — server-side sessions, argon2 password hashing, single admin user from env. No public signup.
+- **API tokens** — mint a bearer token in the UI, hand it to a script / CI / Claude Code for full API automation (`Authorization: Bearer cbx_…`), revoke it in one click. Hash-at-rest, shown once, tokens can't manage tokens.
 - **Retention job** — deletes old events while keeping the last N per issue. Issue summaries live forever.
 - **One Rust binary**, one SQLite file, embedded frontend. The whole production image is **~40 MB**.
 
@@ -74,6 +75,7 @@ See `docs/` for the details:
 - [`docs/configuration.md`](docs/configuration.md) — every `CRASHBOX_*` env var
 - [`docs/logs.md`](docs/logs.md) — Live Logs protocol, streaming, and limitations
 - [`docs/heartbeats.md`](docs/heartbeats.md) — heartbeat monitors: ping contract, states, alerts
+- [`docs/api-tokens.md`](docs/api-tokens.md) — bearer tokens for automation: issue, use, revoke
 - [`docs/development.md`](docs/development.md) — local dev, tests, layout
 - [`docs/ui-design.md`](docs/ui-design.md) — UI brief / design notes
 
@@ -171,6 +173,8 @@ In both cases, the event should appear in the UI within a second.
 ---
 
 ## Status
+
+**1.6.0** — feature release: **API tokens** — personal bearer tokens for automation: mint in the UI (shown once, SHA-256 at rest, optional expiry), use on every admin endpoint via `Authorization: Bearer cbx_…`, revoke instantly; token endpoints are session-only so a leaked token can't mint successors. Built for handing Crashbox to scripts and AI agents (Claude Code) — see [`docs/api-tokens.md`](docs/api-tokens.md). Also fixes icon rendering on rows after the first (Solid shared-DOM-node bug on the heartbeats tape) and unifies project navigation: every project page now shows the same section tabs (`issues · live logs · heartbeats · settings`) with the current one highlighted, instead of each page hand-rolling an inconsistent link list.
 
 **1.5.0** — feature release: **Heartbeats (dead-man's switch)** — register jobs that must ping `GET|POST /ping/<key>` every `period_seconds`; a sweep flips silent monitors to `down` (once per transition) and sends `heartbeat_down` / `heartbeat_recovered` through the existing notification channels with overdue/downtime detail. New dashboard page with status badges, live due/overdue countdown, create/edit, pause/resume, and one-click ping-URL copy. Per-monitor ping rate limit, `CRASHBOX_HEARTBEAT_*` env vars, Prometheus counters `crashbox_heartbeat_pings_total` / `crashbox_heartbeat_transitions_total`. Passive by design — no outbound probing. See [`docs/heartbeats.md`](docs/heartbeats.md).
 

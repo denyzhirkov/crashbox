@@ -1,9 +1,9 @@
-import { A, useParams } from '@solidjs/router'
+import { useParams } from '@solidjs/router'
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 import { createResource } from 'solid-js'
 import { api } from '../api/client'
 import type { LogLevel, LogRecord } from '../api/types'
-import { Breadcrumb, Page } from '../components/layout'
+import { Breadcrumb, Page, ProjectNav } from '../components/layout'
 import { Icon, Sparkline } from '../components/primitives'
 import { useAuth } from '../lib/auth-context'
 
@@ -149,10 +149,7 @@ export default function LiveLogsPage() {
             { label: 'live logs' },
           ]}
         />
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <A href={`/projects/${projectId()}/issues`} class="btn ghost sm">issues</A>
-          <A href={`/projects/${projectId()}/settings`} class="btn ghost sm">settings</A>
-        </div>
+        <ProjectNav projectId={projectId()} current="logs" />
       </div>
 
       <Show

@@ -1,8 +1,8 @@
-import { A, useParams } from '@solidjs/router'
+import { useParams } from '@solidjs/router'
 import { createMemo, createResource, createSignal, For, onCleanup, Show } from 'solid-js'
 import { api } from '../api/client'
 import type { HeartbeatMonitor, HeartbeatStatus } from '../api/types'
-import { Breadcrumb, Page } from '../components/layout'
+import { Breadcrumb, Page, ProjectNav } from '../components/layout'
 import { CadenceLane, CopyBlock, Icon, SevCue, Voice } from '../components/primitives'
 import { useAuth } from '../lib/auth-context'
 import { relTime } from '../lib/time'
@@ -116,10 +116,7 @@ export default function HeartbeatsPage() {
             { label: 'heartbeats' },
           ]}
         />
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <A href={`/projects/${projectId()}/issues`} class="btn ghost sm">issues</A>
-          <A href={`/projects/${projectId()}/settings`} class="btn ghost sm">settings</A>
-        </div>
+        <ProjectNav projectId={projectId()} current="heartbeats" />
       </div>
 
       <div style={{ display: 'flex', 'align-items': 'center', gap: '16px', 'margin-bottom': '18px' }}>

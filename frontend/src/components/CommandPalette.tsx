@@ -118,6 +118,7 @@ export function CommandPalette() {
     out.push({ id: 'go-projects', category: 'nav', icon: 'arrow', label: 'go to projects', run: () => nav('/projects') })
 
     // session
+    out.push({ id: 'tokens', category: 'session', icon: 'cmd', label: 'manage api tokens', run: () => nav('/tokens') })
     out.push({ id: 'logout', category: 'session', icon: 'x', label: 'logout', run: async () => { await auth.logout(); nav('/login', { replace: true }) } })
     return out
   })

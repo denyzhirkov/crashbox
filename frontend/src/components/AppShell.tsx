@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from '@solidjs/router'
+import { A, useLocation, useNavigate } from '@solidjs/router'
 import { createMemo, createResource, type JSX, Show } from 'solid-js'
 import { api } from '../api/client'
 import { useAuth } from '../lib/auth-context'
@@ -75,9 +75,14 @@ export function AppShell(props: { children: JSX.Element }) {
           <Show when={user()}>
             {(u) => (
               <>
-                <span class="mono" style={{ 'font-size': '12px', color: 'var(--text-lo)', 'max-width': '220px', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>
+                <A
+                  href="/tokens"
+                  class="mono cb-crumb"
+                  title="api tokens"
+                  style={{ 'font-size': '12px', color: 'var(--text-lo)', 'max-width': '220px', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}
+                >
                   {u().email}
-                </span>
+                </A>
                 <button class="btn ghost sm" onClick={onLogout}>logout</button>
               </>
             )}

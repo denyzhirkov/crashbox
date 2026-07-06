@@ -1,4 +1,6 @@
 import type {
+  ApiToken,
+  CreatedToken,
   DsnInfo,
   EventDetail,
   HeartbeatMonitor,
@@ -89,6 +91,12 @@ export const api = {
   events: {
     get: (id: number) => req<EventDetail>(`/api/events/${id}`),
   },
+  tokens: {
+    list: () => req<ApiToken[]>('/api/tokens'),
+    create: (body: { name: string; expires_in_days?: number }) =>
+      req<CreatedToken>('/api/tokens', { method: 'POST', body: JSON.stringify(body) }),
+    remove: (id: number) => req<void>(`/api/tokens/${id}`, { method: 'DELETE' }),
+  },
   heartbeats: {
     list: (projectId: number) =>
       req<HeartbeatMonitor[]>(`/api/projects/${projectId}/heartbeats`),
@@ -121,6 +129,8 @@ export const api = {
 
 // Re-export so callers only need one import path.
 export type {
+  ApiToken,
+  CreatedToken,
   DsnInfo,
   EventDetail,
   EventRow,

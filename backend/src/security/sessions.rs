@@ -109,6 +109,40 @@ fn cookie_from_header(header: &str, name: &str) -> Option<String> {
     None
 }
 
+fn session_id_from_parts(parts: &Parts) -> Option<String> {
+    parts
+        .headers
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| cookie_from_header(s, COOKIE_NAME))
+}
+
+async fn auth_via_session(state: &AppState, parts: &Parts) -> Result<Option<AuthUser>, AppError> {
+    let Some(raw) = session_id_from_parts(parts) else {
+        return Ok(None);
+    };
+    lookup(&state.db, &raw)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::Error::new(e)))
+}
+
+async fn auth_via_bearer(state: &AppState, parts: &Parts) -> Result<Option<AuthUser>, AppError> {
+    let Some(token) = parts
+        .headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(crate::security::tokens::from_authorization_header)
+    else {
+        return Ok(None);
+    };
+    let hash = crate::security::tokens::hash(token);
+    crate::db::tokens::lookup_by_hash(&state.db, &hash)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::Error::new(e)))
+}
+
+/// Accepts either credential: session cookie first, then `Authorization: Bearer cbx_…`.
+/// Every admin endpoint that takes `AuthUser` is automatically usable with API tokens.
 #[axum::async_trait]
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = AppError;
@@ -117,16 +151,32 @@ impl FromRequestParts<AppState> for AuthUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let raw = parts
-            .headers
-            .get("cookie")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| cookie_from_header(s, COOKIE_NAME))
-            .ok_or(AppError::Unauthorized)?;
-        match lookup(&state.db, &raw).await {
-            Ok(Some(user)) => Ok(user),
-            Ok(None) => Err(AppError::Unauthorized),
-            Err(e) => Err(AppError::Internal(anyhow::Error::new(e))),
+        if let Some(user) = auth_via_session(state, parts).await? {
+            return Ok(user);
+        }
+        if let Some(user) = auth_via_bearer(state, parts).await? {
+            return Ok(user);
+        }
+        Err(AppError::Unauthorized)
+    }
+}
+
+/// Session-cookie-only variant. Used by the token-management endpoints so an API token can
+/// never mint or revoke tokens — a leaked token must not be able to grant itself successors.
+#[derive(Debug, Clone)]
+pub struct SessionUser(pub AuthUser);
+
+#[axum::async_trait]
+impl FromRequestParts<AppState> for SessionUser {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        match auth_via_session(state, parts).await? {
+            Some(user) => Ok(Self(user)),
+            None => Err(AppError::Unauthorized),
         }
     }
 }

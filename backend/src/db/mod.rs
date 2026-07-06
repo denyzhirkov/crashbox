@@ -2,6 +2,7 @@ pub mod events;
 pub mod heartbeats;
 pub mod issues;
 pub mod projects;
+pub mod tokens;
 pub mod users;
 
 use std::path::Path;

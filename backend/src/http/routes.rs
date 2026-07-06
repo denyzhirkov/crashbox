@@ -4,7 +4,7 @@ use axum::Router;
 use tower_http::trace::TraceLayer;
 
 use crate::app_state::AppState;
-use crate::http::{assets, auth, health, heartbeats, ingest, issues, livelog, projects};
+use crate::http::{assets, auth, health, heartbeats, ingest, issues, livelog, projects, tokens};
 use crate::metrics_layer;
 
 pub fn build(state: AppState) -> Router {
@@ -36,6 +36,8 @@ pub fn build(state: AppState) -> Router {
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/auth/me", get(auth::me))
+        .route("/api/tokens", get(tokens::list).post(tokens::create))
+        .route("/api/tokens/:id", delete(tokens::remove))
         .route("/api/projects", get(projects::list).post(projects::create))
         .route("/api/projects/overview", get(projects::overview))
         .route(

@@ -1,7 +1,8 @@
-// App-shell layout pieces: wordmark, centered page column, breadcrumb, footer hints.
+// App-shell layout pieces: wordmark, centered page column, breadcrumb, project nav, footer hints.
 
 import { A } from '@solidjs/router'
 import { For, type JSX, Show } from 'solid-js'
+import { useAuth } from '../lib/auth-context'
 
 export function Wordmark(props: { small?: boolean; onClick?: () => void; href?: string }) {
   const mark = (
@@ -51,6 +52,53 @@ export function Breadcrumb(props: { items: Crumb[] }) {
                 <A href={it.href!} class="cb-crumb" style={{ color: lastColor(), 'white-space': 'nowrap' }}>{it.label}</A>
               </Show>
             </span>
+          )
+        }}
+      </For>
+    </nav>
+  )
+}
+
+/* ---- project section nav ------------------------------------------------
+   Every project page shows the SAME set of sections with the current one lit —
+   pages must not hand-roll "links to everyone but me" (the lists drift and the
+   menu appears to change shape as you navigate; that shipped as a bug once). */
+export type ProjectSection = 'issues' | 'logs' | 'heartbeats' | 'settings'
+
+export function ProjectNav(props: { projectId: number; current: ProjectSection }) {
+  const { user } = useAuth()
+  const sections = () => {
+    const all: Array<{ key: ProjectSection; label: string; path: string }> = [
+      { key: 'issues', label: 'issues', path: 'issues' },
+      { key: 'logs', label: 'live logs', path: 'logs' },
+      { key: 'heartbeats', label: 'heartbeats', path: 'heartbeats' },
+      { key: 'settings', label: 'settings', path: 'settings' },
+    ]
+    return all.filter((s) => s.key !== 'logs' || user()?.live_logs_enabled !== false)
+  }
+  return (
+    <nav style={{ display: 'flex', gap: '4px' }} aria-label="project sections">
+      <For each={sections()}>
+        {(s) => {
+          const active = () => s.key === props.current
+          return (
+            <A
+              href={`/projects/${props.projectId}/${s.path}`}
+              class="btn ghost sm"
+              aria-current={active() ? 'page' : undefined}
+              style={
+                active()
+                  ? {
+                      color: 'var(--text-hi)',
+                      background: 'oklch(1 0 0 / 0.05)',
+                      'border-color': 'var(--line-strong)',
+                      'pointer-events': 'none',
+                    }
+                  : undefined
+              }
+            >
+              {s.label}
+            </A>
           )
         }}
       </For>

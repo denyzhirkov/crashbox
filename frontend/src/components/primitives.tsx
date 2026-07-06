@@ -3,46 +3,51 @@
 
 import { type JSX, createSignal, For, Show } from 'solid-js'
 
-/* ---- minimal stroke icons (UI affordances only) ------------------------- */
-const ICONS: Record<string, JSX.Element> = {
-  copy: (
+/* ---- minimal stroke icons (UI affordances only) --------------------------
+   Factories, not JSX values: a plain `name: <path/>` entry compiles to ONE
+   real DOM node created at module load, and mounting the same icon twice
+   makes the later <Icon> steal the node from the earlier one (bit us on the
+   heartbeats tape — icons appeared only on the last row). `() => JSX` clones
+   fresh nodes per instance. */
+const ICONS: Record<string, () => JSX.Element> = {
+  copy: () => (
     <>
       <rect x="4" y="4" width="9" height="9" rx="2" />
       <path d="M7 4V3a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1" transform="translate(-1 1)" />
     </>
   ),
-  check: <path d="M3 8.5 6.5 12 13 4" />,
-  search: (
+  check: () => <path d="M3 8.5 6.5 12 13 4" />,
+  search: () => (
     <>
       <circle cx="7.5" cy="7.5" r="4.5" />
       <path d="m14 14-3-3" />
     </>
   ),
-  star: <path d="M8 1.6l1.9 3.9 4.3.6-3.1 3 .8 4.3L8 11.3 4.2 13.4l.8-4.3-3.1-3 4.3-.6z" />,
-  x: <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" />,
-  chevron: <path d="M5 6l3 3 3-3" />,
-  chevronr: <path d="M6 4l4 4-4 4" />,
-  arrow: <path d="M9 3 4 8l5 5M4 8h10" />,
-  refresh: <path d="M13 7a5 5 0 1 0-1.2 4.2M13 3v3.5H9.5" />,
-  plus: <path d="M8 3v10M3 8h10" />,
-  enter: <path d="M13 4v3a2 2 0 0 1-2 2H3m0 0 3-3M3 9l3 3" />,
-  bolt: <path d="M9 1 3 9h4l-1 6 6-8H8z" />,
-  clock: (
+  star: () => <path d="M8 1.6l1.9 3.9 4.3.6-3.1 3 .8 4.3L8 11.3 4.2 13.4l.8-4.3-3.1-3 4.3-.6z" />,
+  x: () => <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" />,
+  chevron: () => <path d="M5 6l3 3 3-3" />,
+  chevronr: () => <path d="M6 4l4 4-4 4" />,
+  arrow: () => <path d="M9 3 4 8l5 5M4 8h10" />,
+  refresh: () => <path d="M13 7a5 5 0 1 0-1.2 4.2M13 3v3.5H9.5" />,
+  plus: () => <path d="M8 3v10M3 8h10" />,
+  enter: () => <path d="M13 4v3a2 2 0 0 1-2 2H3m0 0 3-3M3 9l3 3" />,
+  bolt: () => <path d="M9 1 3 9h4l-1 6 6-8H8z" />,
+  clock: () => (
     <>
       <circle cx="8" cy="8" r="6" />
       <path d="M8 5v3.2l2 1.3" />
     </>
   ),
-  snooze: (
+  snooze: () => (
     <>
       <circle cx="8" cy="8" r="6" />
       <path d="M6 6h4l-4 4h4" />
     </>
   ),
-  pulse: <path d="M1 8h3l2-5 3 10 2-5h4" />,
-  dot: <circle cx="8" cy="8" r="2.4" />,
-  ext: <path d="M6 4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2M9 3h4v4M13 3 7 9" />,
-  cmd: <path d="M5.5 4.5A1.5 1.5 0 1 1 7 6v4a1.5 1.5 0 1 1-1.5-1.5h5A1.5 1.5 0 1 1 9 10V6a1.5 1.5 0 1 1 1.5 1.5h-5z" />,
+  pulse: () => <path d="M1 8h3l2-5 3 10 2-5h4" />,
+  dot: () => <circle cx="8" cy="8" r="2.4" />,
+  ext: () => <path d="M6 4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2M9 3h4v4M13 3 7 9" />,
+  cmd: () => <path d="M5.5 4.5A1.5 1.5 0 1 1 7 6v4a1.5 1.5 0 1 1-1.5-1.5h5A1.5 1.5 0 1 1 9 10V6a1.5 1.5 0 1 1 1.5 1.5h-5z" />,
 }
 
 export function Icon(props: { name: keyof typeof ICONS | string; size?: number; style?: JSX.CSSProperties }) {
@@ -59,7 +64,7 @@ export function Icon(props: { name: keyof typeof ICONS | string; size?: number; 
       stroke-linejoin="round"
       style={{ flex: 'none', ...props.style }}
     >
-      {ICONS[props.name]}
+      {ICONS[props.name]?.()}
     </svg>
   )
 }

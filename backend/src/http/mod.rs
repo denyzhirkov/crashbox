@@ -9,3 +9,4 @@ pub mod issues;
 pub mod livelog;
 pub mod projects;
 pub mod routes;
+pub mod tokens;
