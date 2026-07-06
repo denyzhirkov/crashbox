@@ -115,6 +115,8 @@ export type HeartbeatMonitor = {
   id: number
   project_id: number
   name: string
+  /** Optional human note — "what breaks if this stops". */
+  description: string | null
   ping_key: string
   period_seconds: number
   grace_seconds: number

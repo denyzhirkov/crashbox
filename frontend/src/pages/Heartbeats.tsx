@@ -218,13 +218,24 @@ function MonitorRow(props: {
         {/* whisper edge cue — same muted 3px severity bar as everywhere else */}
         <SevCue level={SEV[m().status]} variant="bar" style={{ height: '20px', 'align-self': 'center' }} />
 
-        <span
-          class="mono"
-          style={{ 'font-size': '13.5px', 'font-weight': 500, color: 'var(--text-hi)', width: '210px', flex: 'none', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}
-          title={m().name}
-        >
-          {m().name}
-        </span>
+        <div style={{ width: '210px', flex: 'none', display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
+          <span
+            class="mono"
+            style={{ 'font-size': '13.5px', 'font-weight': 500, color: 'var(--text-hi)', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}
+            title={m().name}
+          >
+            {m().name}
+          </span>
+          <Show when={m().description}>
+            <span
+              class="mono"
+              style={{ 'font-size': '11px', color: 'var(--text-faint)', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}
+              title={m().description ?? undefined}
+            >
+              {m().description}
+            </span>
+          </Show>
+        </div>
 
         <CadenceLane
           status={m().status}
@@ -274,12 +285,18 @@ function MonitorRow(props: {
 function MonitorForm(props: {
   initial?: HeartbeatMonitor
   embedded?: boolean
-  submit: (body: { name: string; period_seconds: number; grace_seconds: number }) => Promise<unknown>
+  submit: (body: {
+    name: string
+    description: string
+    period_seconds: number
+    grace_seconds: number
+  }) => Promise<unknown>
   onCancel: () => void
   onSaved: () => void
 }) {
   const startPeriod = splitPeriod(props.initial?.period_seconds ?? 3600)
   const [name, setName] = createSignal(props.initial?.name ?? '')
+  const [description, setDescription] = createSignal(props.initial?.description ?? '')
   const [periodValue, setPeriodValue] = createSignal(String(startPeriod.value))
   const [periodUnit, setPeriodUnit] = createSignal(startPeriod.unit)
   const [graceSec, setGraceSec] = createSignal(props.initial?.grace_seconds ?? 60)
@@ -302,7 +319,13 @@ function MonitorForm(props: {
     setBusy(true)
     setErr(null)
     try {
-      await props.submit({ name: name().trim(), period_seconds: periodSeconds(), grace_seconds: graceSec() })
+      // Blank description clears on edit / stays absent on create (server-side semantics).
+      await props.submit({
+        name: name().trim(),
+        description: description().trim(),
+        period_seconds: periodSeconds(),
+        grace_seconds: graceSec(),
+      })
       props.onSaved()
     } catch (e) {
       setErr((e as Error).message)
@@ -409,6 +432,20 @@ function MonitorForm(props: {
           <button class="btn ghost" onClick={props.onCancel}>cancel</button>
         </div>
       </div>
+
+      <label style={{ display: 'flex', 'flex-direction': 'column', gap: '6px', 'margin-top': '14px' }}>
+        <span class="mono" style={{ 'font-size': '11px', color: 'var(--text-lo)' }}>description <span style={{ color: 'var(--text-faint)' }}>· optional</span></span>
+        <span class="field cb-focusring">
+          <input
+            class="input mono"
+            placeholder="what breaks if this stops — e.g. nightly payment reconciliation, pages finance"
+            value={description()}
+            onInput={(e) => setDescription(e.currentTarget.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submit()}
+            maxLength={500}
+          />
+        </span>
+      </label>
 
       <div class="mono" style={{ 'font-size': '11.5px', color: 'var(--text-faint)', 'margin-top': '14px', 'border-top': '1px solid var(--line-soft)', 'padding-top': '12px' }}>
         // pings expected every {fmtPeriod(periodSeconds())}, alert {fmtPeriod(graceSec())} late

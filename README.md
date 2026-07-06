@@ -22,10 +22,10 @@ docker run -d \
   -e CRASHBOX_ADMIN_PASSWORD=change-me-on-first-boot \
   -e CRASHBOX_PROJECT_NAME=my-app \
   -e CRASHBOX_PUBLIC_URL=http://localhost:8080 \
-  denyzhirkov/crashbox:1.6.0
+  denyzhirkov/crashbox:1.7.0
 ```
 
-Image: [`denyzhirkov/crashbox`](https://hub.docker.com/r/denyzhirkov/crashbox) on Docker Hub (~40 MB, distroless, non-root, multi-arch `linux/amd64` + `linux/arm64`). Pin to a specific tag (`:1.6.0`) in production; `:latest` follows the most recent release.
+Image: [`denyzhirkov/crashbox`](https://hub.docker.com/r/denyzhirkov/crashbox) on Docker Hub (~40 MB, distroless, non-root, multi-arch `linux/amd64` + `linux/arm64`). Pin to a specific tag (`:1.7.0`) in production; `:latest` follows the most recent release.
 
 Watch the logs for the bootstrap line — it prints the DSN exactly once:
 
@@ -173,6 +173,8 @@ In both cases, the event should appear in the UI within a second.
 ---
 
 ## Status
+
+**1.7.0** — heartbeat monitors gain an optional **description** ("what breaks if this stops"), shown under the monitor name in the list and editable in the form; blank on edit clears it. A wall of terse cron names stays legible a month later.
 
 **1.6.0** — feature release: **API tokens** — personal bearer tokens for automation: mint in the UI (shown once, SHA-256 at rest, optional expiry), use on every admin endpoint via `Authorization: Bearer cbx_…`, revoke instantly; token endpoints are session-only so a leaked token can't mint successors. Built for handing Crashbox to scripts and AI agents (Claude Code) — see [`docs/api-tokens.md`](docs/api-tokens.md). Also fixes icon rendering on rows after the first (Solid shared-DOM-node bug on the heartbeats tape) and unifies project navigation: every project page now shows the same section tabs (`issues · live logs · heartbeats · settings`) with the current one highlighted, instead of each page hand-rolling an inconsistent link list.
 

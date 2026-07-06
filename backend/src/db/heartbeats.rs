@@ -18,14 +18,16 @@ pub const STATUS_UP: &str = "up";
 pub const STATUS_DOWN: &str = "down";
 pub const STATUS_PAUSED: &str = "paused";
 
-const COLUMNS: &str = "id, project_id, name, ping_key, period_seconds, grace_seconds, \
-                       status, last_ping_at, last_transition_at, created_at, updated_at";
+const COLUMNS: &str = "id, project_id, name, description, ping_key, period_seconds, \
+                       grace_seconds, status, last_ping_at, last_transition_at, \
+                       created_at, updated_at";
 
 #[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct HeartbeatMonitor {
     pub id: i64,
     pub project_id: i64,
     pub name: String,
+    pub description: Option<String>,
     pub ping_key: String,
     pub period_seconds: i64,
     pub grace_seconds: i64,
@@ -82,6 +84,7 @@ pub async fn insert(
     pool: &SqlitePool,
     project_id: i64,
     name: &str,
+    description: Option<&str>,
     ping_key: &str,
     period_seconds: i64,
     grace_seconds: i64,
@@ -89,12 +92,13 @@ pub async fn insert(
     let now = Utc::now().to_rfc3339();
     let row = sqlx::query(
         "INSERT INTO heartbeat_monitors \
-            (project_id, name, ping_key, period_seconds, grace_seconds, status, \
+            (project_id, name, description, ping_key, period_seconds, grace_seconds, status, \
              last_transition_at, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(project_id)
     .bind(name)
+    .bind(description)
     .bind(ping_key)
     .bind(period_seconds)
     .bind(grace_seconds)
@@ -107,10 +111,13 @@ pub async fn insert(
     Ok(row.last_insert_rowid())
 }
 
+/// `description` is three-state: `None` keeps the current value, `Some(None)` clears it,
+/// `Some(Some(s))` sets it — a plain COALESCE can't express "clear".
 pub async fn update(
     pool: &SqlitePool,
     id: i64,
     name: Option<&str>,
+    description: Option<Option<&str>>,
     period_seconds: Option<i64>,
     grace_seconds: Option<i64>,
 ) -> sqlx::Result<u64> {
@@ -118,12 +125,15 @@ pub async fn update(
     let result = sqlx::query(
         "UPDATE heartbeat_monitors SET \
             name = COALESCE(?, name), \
+            description = CASE WHEN ? THEN ? ELSE description END, \
             period_seconds = COALESCE(?, period_seconds), \
             grace_seconds = COALESCE(?, grace_seconds), \
             updated_at = ? \
          WHERE id = ?",
     )
     .bind(name)
+    .bind(description.is_some())
+    .bind(description.flatten())
     .bind(period_seconds)
     .bind(grace_seconds)
     .bind(&now)

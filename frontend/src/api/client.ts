@@ -100,14 +100,18 @@ export const api = {
   heartbeats: {
     list: (projectId: number) =>
       req<HeartbeatMonitor[]>(`/api/projects/${projectId}/heartbeats`),
-    create: (projectId: number, body: { name: string; period_seconds: number; grace_seconds?: number }) =>
+    create: (
+      projectId: number,
+      body: { name: string; description?: string; period_seconds: number; grace_seconds?: number },
+    ) =>
       req<HeartbeatMonitor>(`/api/projects/${projectId}/heartbeats`, {
         method: 'POST',
         body: JSON.stringify(body),
       }),
     update: (
       id: number,
-      body: { name?: string; period_seconds?: number; grace_seconds?: number; status?: 'paused' | 'pending' },
+      // description: omit = keep, '' = clear, value = set
+      body: { name?: string; description?: string; period_seconds?: number; grace_seconds?: number; status?: 'paused' | 'pending' },
     ) =>
       req<HeartbeatMonitor>(`/api/heartbeats/${id}`, {
         method: 'PATCH',

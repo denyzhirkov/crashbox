@@ -24,10 +24,14 @@ const PERIOD_MAX_SECONDS: i64 = 30 * 24 * 3600;
 const GRACE_MAX_SECONDS: i64 = 24 * 3600;
 const GRACE_DEFAULT_SECONDS: i64 = 60;
 const NAME_MAX_CHARS: usize = 200;
+const DESCRIPTION_MAX_CHARS: usize = 500;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateMonitor {
     pub name: String,
+    /// Optional human note ("what breaks if this stops"). Blank is treated as absent.
+    #[serde(default)]
+    pub description: Option<String>,
     pub period_seconds: i64,
     #[serde(default)]
     pub grace_seconds: Option<i64>,
@@ -37,6 +41,9 @@ pub struct CreateMonitor {
 pub struct UpdateMonitor {
     #[serde(default)]
     pub name: Option<String>,
+    /// Present-and-blank clears the note; absent keeps it.
+    #[serde(default)]
+    pub description: Option<String>,
     #[serde(default)]
     pub period_seconds: Option<i64>,
     #[serde(default)]
@@ -182,6 +189,7 @@ pub async fn create(
         .await?
         .ok_or(AppError::NotFound)?;
     let name = validate_name(&body.name)?;
+    let description = validate_description(body.description.as_deref())?;
     validate_period(body.period_seconds)?;
     let grace = body.grace_seconds.unwrap_or(GRACE_DEFAULT_SECONDS);
     validate_grace(grace)?;
@@ -191,6 +199,7 @@ pub async fn create(
         &state.db,
         project_id,
         name,
+        description,
         &ping_key,
         body.period_seconds,
         grace,
@@ -220,6 +229,11 @@ pub async fn patch(
         Some(raw) => Some(validate_name(raw)?),
         None => None,
     };
+    // Three-state: absent = keep, blank = clear, value = set.
+    let description = match body.description.as_deref() {
+        Some(raw) => Some(validate_description(Some(raw))?),
+        None => None,
+    };
     if let Some(period) = body.period_seconds {
         validate_period(period)?;
     }
@@ -234,8 +248,20 @@ pub async fn patch(
         }
     }
 
-    if name.is_some() || body.period_seconds.is_some() || body.grace_seconds.is_some() {
-        heartbeats::update(&state.db, id, name, body.period_seconds, body.grace_seconds).await?;
+    if name.is_some()
+        || description.is_some()
+        || body.period_seconds.is_some()
+        || body.grace_seconds.is_some()
+    {
+        heartbeats::update(
+            &state.db,
+            id,
+            name,
+            description,
+            body.period_seconds,
+            body.grace_seconds,
+        )
+        .await?;
     }
     if let Some(status) = body.status.as_deref() {
         heartbeats::set_status(&state.db, id, status).await?;
@@ -274,6 +300,22 @@ fn validate_name(raw: &str) -> Result<&str, AppError> {
         )));
     }
     Ok(name)
+}
+
+/// Trims and bounds the note; a blank input becomes `None` (create: absent, patch: clear).
+fn validate_description(raw: Option<&str>) -> Result<Option<&str>, AppError> {
+    let Some(trimmed) = raw.map(str::trim) else {
+        return Ok(None);
+    };
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.chars().count() > DESCRIPTION_MAX_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "description must be at most {DESCRIPTION_MAX_CHARS} characters"
+        )));
+    }
+    Ok(Some(trimmed))
 }
 
 fn validate_period(v: i64) -> Result<(), AppError> {

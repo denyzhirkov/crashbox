@@ -217,6 +217,62 @@ async fn create_and_patch_validation() {
 }
 
 #[tokio::test]
+async fn description_set_keep_and_clear() {
+    let addr = spawn_app().await;
+    let c = admin(addr).await;
+
+    // Created with a note; blank-only note is treated as absent.
+    let m = create_monitor(
+        &c,
+        addr,
+        json!({"name": "reconcile", "period_seconds": 900,
+               "description": "  nightly payment reconciliation — pages finance if silent  "}),
+    )
+    .await;
+    let id = m["id"].as_i64().unwrap();
+    assert_eq!(
+        m["description"], "nightly payment reconciliation — pages finance if silent",
+        "stored trimmed"
+    );
+
+    // PATCH without the field keeps it.
+    let kept: Value = c
+        .patch(format!("http://{addr}/api/heartbeats/{id}"))
+        .json(&json!({"period_seconds": 1800}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        kept["description"].is_string(),
+        "absent field must keep note"
+    );
+
+    // PATCH with a blank clears it.
+    let cleared: Value = c
+        .patch(format!("http://{addr}/api/heartbeats/{id}"))
+        .json(&json!({"description": "  "}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(cleared["description"].is_null(), "blank must clear note");
+
+    // Over the cap → 400.
+    let resp = c
+        .post(format!("http://{addr}/api/projects/1/heartbeats"))
+        .json(&json!({"name": "x", "period_seconds": 60, "description": "d".repeat(501)}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
 async fn pause_resume_and_ping_from_paused() {
     let addr = spawn_app().await;
     let c = admin(addr).await;

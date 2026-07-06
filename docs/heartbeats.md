@@ -72,13 +72,17 @@ All session-authed; create/edit/delete require admin.
 
 ```
 GET    /api/projects/:id/heartbeats        list (each item includes ping_url)
-POST   /api/projects/:id/heartbeats        { name, period_seconds, grace_seconds? = 60 }
-PATCH  /api/heartbeats/:id                 { name?, period_seconds?, grace_seconds?, status? }
+POST   /api/projects/:id/heartbeats        { name, description?, period_seconds, grace_seconds? = 60 }
+PATCH  /api/heartbeats/:id                 { name?, description?, period_seconds?, grace_seconds?, status? }
 DELETE /api/heartbeats/:id                 204; the ping URL dies with it
 ```
 
 `status` accepts only `"paused"` (pause) and `"pending"` (resume) — `up`/`down` are owned by
 pings and the sweep. Bounds: `period_seconds` 10 s … 30 d, `grace_seconds` 0 … 24 h.
+
+`description` is an optional human note (≤ 500 chars) shown under the monitor name — "what
+breaks if this stops". On PATCH it is three-state: omit the field to keep the note, send a
+blank string to clear it, send text to replace it.
 
 ## Metrics
 
