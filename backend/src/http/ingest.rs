@@ -12,7 +12,7 @@ use crate::db::issues::UpsertOutcome;
 use crate::db::{events, issues};
 use crate::http::dsn_auth::{self, DsnAuthError};
 use crate::http::livelog;
-use crate::notify::{Kind as NotifyKind, Notification};
+use crate::notify::{IssueNotification, Kind as NotifyKind, Notification};
 use crate::sentry::{envelope, grouping, normalize};
 
 #[derive(Debug, Deserialize)]
@@ -198,7 +198,7 @@ pub async fn envelope_endpoint(
                 if let Some(kind) = notify_kind {
                     if !state.notify.is_empty() {
                         let link = state.notify.build_link(issue_id);
-                        state.notify.fire(Notification {
+                        state.notify.fire(Notification::Issue(IssueNotification {
                             kind,
                             project_name: project.name.clone(),
                             project_slug: project.slug.clone(),
@@ -211,7 +211,7 @@ pub async fn envelope_endpoint(
                             link,
                             current_hour: None,
                             baseline_per_hour: None,
-                        });
+                        }));
                     }
                 }
 

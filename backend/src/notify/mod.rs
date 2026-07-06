@@ -9,6 +9,10 @@
 //! Triggers **never** fire on subsequent events of an already-unresolved issue — that path is
 //! what `spike` detection (A2) is for. Documented in `docs/configuration.md`.
 //!
+//! Heartbeat monitors ride the same pipeline with their own payload shape (see
+//! [`HeartbeatKind`]): `heartbeat_down` from the sweep job, `heartbeat_recovered` from the
+//! ping endpoint.
+//!
 //! Delivery is fire-and-forget via `tokio::spawn` from the ingest path: a slow Telegram API
 //! must not block a Sentry SDK's request. Failures are logged at `WARN` and counted (future
 //! `/metrics`).
@@ -34,8 +38,25 @@ pub enum Kind {
     Spike,
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeartbeatKind {
+    HeartbeatDown,
+    HeartbeatRecovered,
+}
+
+/// One message through the pipeline. `untagged` keeps the wire format of issue notifications
+/// byte-identical to what it was before heartbeats existed — each variant carries its own
+/// `kind` field, and the generic webhook consumer discriminates on that, not on an outer tag.
 #[derive(Debug, Clone, Serialize)]
-pub struct Notification {
+#[serde(untagged)]
+pub enum Notification {
+    Issue(IssueNotification),
+    Heartbeat(HeartbeatNotification),
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IssueNotification {
     pub kind: Kind,
     pub project_name: String,
     pub project_slug: String,
@@ -54,8 +75,40 @@ pub struct Notification {
     pub baseline_per_hour: Option<f64>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct HeartbeatNotification {
+    pub kind: HeartbeatKind,
+    pub project_name: String,
+    pub project_slug: String,
+    pub monitor_id: i64,
+    pub monitor_name: String,
+    /// Set only for `HeartbeatDown`: seconds past the ping deadline (`last_ping + period + grace`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overdue_seconds: Option<i64>,
+    /// Set only for `HeartbeatRecovered`: seconds the monitor spent down.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub downtime_seconds: Option<i64>,
+    pub link: String,
+}
+
 impl Notification {
     /// Compact human-friendly subject line, used by Telegram/Discord text bodies.
+    pub fn subject(&self) -> String {
+        match self {
+            Self::Issue(n) => n.subject(),
+            Self::Heartbeat(n) => n.subject(),
+        }
+    }
+
+    pub fn link(&self) -> &str {
+        match self {
+            Self::Issue(n) => &n.link,
+            Self::Heartbeat(n) => &n.link,
+        }
+    }
+}
+
+impl IssueNotification {
     pub fn subject(&self) -> String {
         let prefix = match self.kind {
             Kind::NewIssue => "🆕 new issue",
@@ -69,6 +122,47 @@ impl Notification {
             ),
             _ => format!("[{}] {prefix}: {}", self.project_slug, self.issue_title),
         }
+    }
+}
+
+impl HeartbeatNotification {
+    pub fn subject(&self) -> String {
+        match self.kind {
+            HeartbeatKind::HeartbeatDown => {
+                let tail = self
+                    .overdue_seconds
+                    .map(|s| format!(" — overdue by {}", fmt_duration(s)))
+                    .unwrap_or_default();
+                format!(
+                    "[{}] 💀 heartbeat down: {}{tail}",
+                    self.project_slug, self.monitor_name
+                )
+            }
+            HeartbeatKind::HeartbeatRecovered => {
+                let tail = self
+                    .downtime_seconds
+                    .map(|s| format!(" — was down {}", fmt_duration(s)))
+                    .unwrap_or_default();
+                format!(
+                    "[{}] 💚 heartbeat recovered: {}{tail}",
+                    self.project_slug, self.monitor_name
+                )
+            }
+        }
+    }
+}
+
+/// Human-compact duration for subject lines: `45s`, `12m`, `3h`, `2d`.
+fn fmt_duration(secs: i64) -> String {
+    let secs = secs.max(0);
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m", secs / 60)
+    } else if secs < 86_400 {
+        format!("{}h", secs / 3600)
+    } else {
+        format!("{}d", secs / 86_400)
     }
 }
 
@@ -134,6 +228,11 @@ impl NotifyHub {
         format!("{base}/issues/{issue_id}")
     }
 
+    pub fn build_heartbeat_link(&self, project_id: i64) -> String {
+        let base = self.public_url.trim_end_matches('/');
+        format!("{base}/projects/{project_id}/heartbeats")
+    }
+
     /// Fire-and-forget. Spawns tasks for each notifier; returns immediately. Drops the
     /// notification for any notifier whose rate bucket is empty (logged at `INFO`).
     pub fn fire(self: &Arc<Self>, msg: Notification) {
@@ -150,7 +249,7 @@ impl NotifyHub {
                 if !allowed {
                     tracing::info!(
                         notifier = n.name(),
-                        issue_id = msg.issue_id,
+                        subject = %msg.subject(),
                         "notify: rate-limited, dropping"
                     );
                     continue;
@@ -158,13 +257,12 @@ impl NotifyHub {
                 match n.send(&msg).await {
                     Ok(()) => tracing::debug!(
                         notifier = n.name(),
-                        issue_id = msg.issue_id,
-                        kind = ?msg.kind,
+                        subject = %msg.subject(),
                         "notify: delivered"
                     ),
                     Err(e) => tracing::warn!(
                         notifier = n.name(),
-                        issue_id = msg.issue_id,
+                        subject = %msg.subject(),
                         error = %e,
                         "notify: delivery failed"
                     ),
@@ -214,9 +312,8 @@ impl TokenBucket {
 mod tests {
     use super::*;
 
-    #[test]
-    fn subject_format() {
-        let n = Notification {
+    fn issue_notification() -> IssueNotification {
+        IssueNotification {
             kind: Kind::NewIssue,
             project_name: "Demo".into(),
             project_slug: "demo".into(),
@@ -229,8 +326,12 @@ mod tests {
             link: "http://localhost/issues/7".into(),
             current_hour: None,
             baseline_per_hour: None,
-        };
-        let s = n.subject();
+        }
+    }
+
+    #[test]
+    fn subject_format() {
+        let s = Notification::Issue(issue_notification()).subject();
         assert!(s.contains("demo"));
         assert!(s.contains("new issue"));
         assert!(s.contains("TypeError: x"));
@@ -238,24 +339,87 @@ mod tests {
 
     #[test]
     fn spike_subject_includes_rate() {
-        let n = Notification {
+        let n = IssueNotification {
             kind: Kind::Spike,
-            project_name: "Demo".into(),
-            project_slug: "demo".into(),
-            issue_id: 7,
-            issue_title: "TypeError: x".into(),
             event_count: 30,
-            level: Some("error".into()),
-            environment: None,
-            release: None,
-            link: "http://localhost/issues/7".into(),
             current_hour: Some(30),
             baseline_per_hour: Some(0.22),
+            ..issue_notification()
         };
-        let s = n.subject();
+        let s = Notification::Issue(n).subject();
         assert!(s.contains("🔥 spike"), "got {s}");
         assert!(s.contains("30/h"));
         assert!(s.contains("0.2/h"));
+    }
+
+    /// The generic-webhook wire format for issue notifications predates heartbeats. The
+    /// `untagged` enum must keep it byte-identical — this test pins the exact shape.
+    #[test]
+    fn issue_wire_format_is_unchanged_by_the_enum() {
+        let v =
+            serde_json::to_value(Notification::Issue(issue_notification())).expect("serializable");
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "kind": "new_issue",
+                "project_name": "Demo",
+                "project_slug": "demo",
+                "issue_id": 7,
+                "issue_title": "TypeError: x",
+                "event_count": 1,
+                "level": "error",
+                "environment": null,
+                "release": null,
+                "link": "http://localhost/issues/7",
+            })
+        );
+    }
+
+    #[test]
+    fn heartbeat_subjects_and_wire_format() {
+        let down = HeartbeatNotification {
+            kind: HeartbeatKind::HeartbeatDown,
+            project_name: "Demo".into(),
+            project_slug: "demo".into(),
+            monitor_id: 3,
+            monitor_name: "nightly backup".into(),
+            overdue_seconds: Some(300),
+            downtime_seconds: None,
+            link: "http://localhost/projects/1/heartbeats".into(),
+        };
+        let s = Notification::Heartbeat(down.clone()).subject();
+        assert!(s.contains("💀 heartbeat down"), "got {s}");
+        assert!(s.contains("nightly backup"));
+        assert!(s.contains("overdue by 5m"));
+
+        let v = serde_json::to_value(Notification::Heartbeat(down)).expect("serializable");
+        assert_eq!(v["kind"], "heartbeat_down");
+        assert_eq!(v["overdue_seconds"], 300);
+        assert!(v.get("downtime_seconds").is_none(), "None fields skipped");
+        assert!(v.get("issue_id").is_none(), "no issue fields on heartbeat");
+
+        let recovered = HeartbeatNotification {
+            kind: HeartbeatKind::HeartbeatRecovered,
+            project_name: "Demo".into(),
+            project_slug: "demo".into(),
+            monitor_id: 3,
+            monitor_name: "nightly backup".into(),
+            overdue_seconds: None,
+            downtime_seconds: Some(7200),
+            link: "x".into(),
+        };
+        let s = Notification::Heartbeat(recovered).subject();
+        assert!(s.contains("💚 heartbeat recovered"), "got {s}");
+        assert!(s.contains("was down 2h"));
+    }
+
+    #[test]
+    fn fmt_duration_units() {
+        assert_eq!(fmt_duration(45), "45s");
+        assert_eq!(fmt_duration(300), "5m");
+        assert_eq!(fmt_duration(7200), "2h");
+        assert_eq!(fmt_duration(200_000), "2d");
+        assert_eq!(fmt_duration(-5), "0s");
     }
 
     #[test]

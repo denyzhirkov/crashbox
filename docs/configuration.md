@@ -11,7 +11,7 @@ The Rust binary reads them on startup, validates them, and fails loudly if anyth
 |---|---|---|
 | `CRASHBOX_HOST` | `0.0.0.0` | Bind address. Use `127.0.0.1` if you put a reverse proxy in front. |
 | `CRASHBOX_PORT` | `8080` | TCP port to listen on. |
-| `CRASHBOX_PUBLIC_URL` | `http://localhost:8080` | Base URL used to compose project DSNs. Set this to whatever public address SDKs will use. |
+| `CRASHBOX_PUBLIC_URL` | `http://localhost:8080` | Base URL used to compose project DSNs, heartbeat ping URLs, and the links inside notifications. Set this to whatever public address SDKs and cron jobs will reach. |
 | `CRASHBOX_DATABASE_URL` | `sqlite://./data/crashbox.db` | SQLite path. In the docker image the default is `sqlite:///data/crashbox.db`. Postgres is not supported in MVP. |
 | `CRASHBOX_DATA_DIR` | `./data` | Reserved for future use (attachments, etc.). |
 | `CRASHBOX_LOG_LEVEL` | `info` | Falls back to `info` if unparseable. Use `CRASHBOX_LOG_FILTER` for full tracing-subscriber syntax (`crashbox=debug,sqlx=warn`). |
@@ -89,6 +89,15 @@ Spike alerts go through the same notify channels as `new_issue` / `reopened` (se
 
 The job is also disabled automatically when no notifiers are configured — no point scanning if there's nowhere to send the result.
 
+## Heartbeats
+
+Dead-man's switch monitors: a cron job or service is expected to hit its ping URL (`GET`/`POST /ping/<ping_key>`) every `period_seconds`; once `period + grace` passes with no ping, the monitor flips to `down` and an alert goes out through the notify channels. The next ping flips it back to `up` with a recovery alert.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `CRASHBOX_HEARTBEAT_SWEEP_INTERVAL_SECONDS` | `30` | How often the sweep looks for overdue monitors. `0` disables the sweep job (pings are still recorded, but nothing flips to `down`). |
+| `CRASHBOX_HEARTBEAT_MAX_PINGS_PER_MINUTE` | `120` | Per-monitor cap on accepted pings; excess pings get `429` with `Retry-After`. |
+
 ## UI
 
 | Variable | Default | Notes |
@@ -121,6 +130,11 @@ The job is also disabled automatically when no notifiers are configured — no p
 - **`new_issue`** — first event of a previously unseen fingerprint
 - **`reopened`** — event arrives on an issue whose status was `resolved`; the status auto-flips back to `unresolved`
 - **`spike`** — known unresolved issue is suddenly burning N× hotter than its baseline (see Spike detection above)
+
+Heartbeat monitors ride the same channels with their own payload shape (`monitor_name` instead of issue fields):
+
+- **`heartbeat_down`** — a monitor missed its ping deadline (`last_ping + period + grace`); fires once per transition, with `overdue_seconds`
+- **`heartbeat_recovered`** — a ping arrived on a `down` monitor, with `downtime_seconds`
 
 A second / third / 100th event of an already-unresolved issue does **not** trigger from the ingest path — that's the job of the spike detection sweep. By design, a single shared deploy that breaks a known issue shouldn't spam the channel with every individual event.
 

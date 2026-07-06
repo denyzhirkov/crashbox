@@ -9,7 +9,10 @@
 
 /* ============================================================================
    CRASHBOX — design tokens · dark-only · signal/aurora
-   one accent (violet→cyan) used as a signal, not a theme · small severity set
+   ONE accent, now FLAT (single blue, no gradient) · small severity set
+   ── change (design session): the accent was violet→cyan gradient; it is now a
+      single flat blue used the same way — focus, single primary action, live
+      signal. The aurora bloom behind the app has been removed for readability.
    ========================================================================== */
 
 @theme {
@@ -38,17 +41,19 @@
   --text-lo:    oklch(0.548 0.004 73);
   --text-faint: oklch(0.430 0.004 73);
 
-  /* ---- the one accent: violet → cyan ---- */
-  --accent-violet: oklch(0.635 0.196 286);
-  --accent-mid:    oklch(0.715 0.150 250);
-  --accent-cyan:   oklch(0.828 0.124 207);
-  --accent-grad:   linear-gradient(105deg, var(--accent-violet) 0%, var(--accent-mid) 52%, var(--accent-cyan) 100%);
-  --accent-grad-v: linear-gradient(180deg, var(--accent-violet) 0%, var(--accent-cyan) 100%);
-  --accent-ink:    oklch(0.760 0.150 268);
-  --accent-faint:  oklch(0.635 0.196 286 / 0.16);
-  --accent-glow:   oklch(0.660 0.190 280 / 0.40);
+  /* ---- the one accent · FLAT blue (was a violet→cyan gradient) ---- */
+  --accent:        oklch(0.715 0.150 250);
+  /* legacy aliases kept so existing references keep compiling; all now flat */
+  --accent-violet: var(--accent);
+  --accent-mid:    var(--accent);
+  --accent-cyan:   var(--accent);
+  --accent-grad:   var(--accent);
+  --accent-grad-v: var(--accent);
+  --accent-ink:    oklch(0.760 0.128 250);
+  --accent-faint:  oklch(0.715 0.150 250 / 0.16);
+  --accent-glow:   oklch(0.715 0.150 250 / 0.38);
 
-  /* ---- severity · muted, deliberately not violet/cyan ---- */
+  /* ---- severity · muted, deliberately not the accent blue ---- */
   --sev-fatal:   oklch(0.645 0.158 16);
   --sev-error:   oklch(0.690 0.150 45);
   --sev-warning: oklch(0.792 0.108 82);
@@ -87,13 +92,9 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   font-feature-settings: "ss01", "cv01";
-  /* subtle living backdrop — a single faint aurora bloom, NOT a wash */
-  background-image:
-    radial-gradient(900px 520px at 78% -8%, oklch(0.635 0.196 286 / 0.05), transparent 60%),
-    radial-gradient(760px 480px at 8% 108%, oklch(0.828 0.124 207 / 0.035), transparent 60%);
-  background-attachment: fixed;
+  /* aurora bloom removed — flat backdrop for readability */
 }
-::selection { background: oklch(0.660 0.190 280 / 0.32); color: var(--text-hi); }
+::selection { background: oklch(0.715 0.150 250 / 0.30); color: var(--text-hi); }
 
 .mono { font-family: var(--font-mono); font-feature-settings: "zero", "ss02"; }
 .tnum { font-variant-numeric: tabular-nums; }
@@ -110,7 +111,7 @@ h1, h2, h3, h4 { margin: 0; color: var(--text-hi); font-weight: 600; letter-spac
 .cb-focusring { position: relative; }
 .cb-focusring::after {
   content: ""; position: absolute; inset: -1px; border-radius: inherit;
-  padding: 1px; background: var(--accent-grad);
+  padding: 1px; background: var(--accent);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor; mask-composite: exclude;
   opacity: 0; transition: opacity 0.16s ease; pointer-events: none;
@@ -136,13 +137,13 @@ h1, h2, h3, h4 { margin: 0; color: var(--text-hi); font-weight: 600; letter-spac
 .btn.ghost { border-color: transparent; color: var(--text-mid); }
 .btn.ghost:hover { background: oklch(1 0 0 / 0.05); color: var(--text-hi); }
 
-/* primary — the single accent action per screen */
+/* primary — the single accent action per screen (now a flat blue fill) */
 .btn.primary {
-  position: relative; border: none; color: oklch(0.16 0.01 280);
-  background: var(--accent-grad); font-weight: 600;
-  box-shadow: 0 0 0 1px oklch(0.660 0.190 280 / 0.35), 0 8px 26px -10px var(--accent-glow);
+  position: relative; border: none; color: oklch(0.16 0.01 250);
+  background: var(--accent); font-weight: 600;
+  box-shadow: 0 0 0 1px oklch(0.715 0.150 250 / 0.35), 0 8px 26px -10px var(--accent-glow);
 }
-.btn.primary:hover { filter: brightness(1.07) saturate(1.05); color: oklch(0.13 0.01 280); }
+.btn.primary:hover { filter: brightness(1.08) saturate(1.03); color: oklch(0.13 0.01 250); }
 .btn.primary:active { filter: brightness(0.98); }
 .btn.primary:focus-visible { box-shadow: 0 0 0 1px var(--bg-base), 0 0 0 3px var(--accent-glow), 0 8px 26px -10px var(--accent-glow); }
 
@@ -249,10 +250,10 @@ h1, h2, h3, h4 { margin: 0; color: var(--text-hi); font-weight: 600; letter-spac
 }
 @keyframes cb-shimmer { 100% { transform: translateX(100%); } }
 @keyframes cb-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
-.livedot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-grad); box-shadow: 0 0 8px -1px var(--accent-glow); animation: cb-pulse 2.4s ease-in-out infinite; }
+.livedot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px -1px var(--accent-glow); animation: cb-pulse 2.4s ease-in-out infinite; }
 
 /* ===== hover states that inline styles can't express =================== */
-.cb-link:hover { color: var(--accent-cyan) !important; }
+.cb-link:hover { color: var(--accent-ink) !important; }
 .cb-crumb:hover { color: var(--text-hi) !important; }
 .cb-minirow:hover { background: oklch(1 0 0 / 0.035); }
 .cb-menuitem:hover { background: oklch(1 0 0 / 0.05); }
@@ -263,3 +264,4 @@ h1, h2, h3, h4 { margin: 0; color: var(--text-hi); font-weight: 600; letter-spac
 .cb-jsontoggle:hover { background: oklch(1 0 0 / 0.03); border-radius: 4px; }
 .cb-copy:hover { border-color: var(--line-strong) !important; }
 .cb-issuerow:hover { background: oklch(1 0 0 / 0.035); }
+.cb-hbrow:hover { background: oklch(1 0 0 / 0.03); }

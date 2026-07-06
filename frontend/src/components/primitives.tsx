@@ -39,6 +39,7 @@ const ICONS: Record<string, JSX.Element> = {
       <path d="M6 6h4l-4 4h4" />
     </>
   ),
+  pulse: <path d="M1 8h3l2-5 3 10 2-5h4" />,
   dot: <circle cx="8" cy="8" r="2.4" />,
   ext: <path d="M6 4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2M9 3h4v4M13 3 7 9" />,
   cmd: <path d="M5.5 4.5A1.5 1.5 0 1 1 7 6v4a1.5 1.5 0 1 1-1.5-1.5h5A1.5 1.5 0 1 1 9 10V6a1.5 1.5 0 1 1 1.5 1.5h-5z" />,
@@ -90,8 +91,8 @@ export function Sparkline(props: {
   const hours = () => props.buckets ?? []
   const max = () => Math.max(1, ...hours())
   const bw = () => w() / Math.max(1, hours().length)
-  const col = () => (props.accent ? 'url(#cbspark)' : props.dim ? 'var(--text-faint)' : 'var(--text-lo)')
-  const peakCol = () => (props.accent ? 'url(#cbspark)' : props.dim ? 'var(--text-lo)' : 'var(--text-mid)')
+  const col = () => (props.accent ? 'var(--accent)' : props.dim ? 'var(--text-faint)' : 'var(--text-lo)')
+  const peakCol = () => (props.accent ? 'var(--accent)' : props.dim ? 'var(--text-lo)' : 'var(--text-mid)')
   return (
     <Show
       when={hours().length > 0}
@@ -105,12 +106,6 @@ export function Sparkline(props: {
         role="img"
         aria-label={`24h activity: ${hours().reduce((a, b) => a + b, 0)} events`}
       >
-        <defs>
-          <linearGradient id="cbspark" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stop-color="var(--accent-violet)" />
-            <stop offset="1" stop-color="var(--accent-cyan)" />
-          </linearGradient>
-        </defs>
         <For each={hours()}>
           {(v, i) => {
             const bh = Math.max(1, (v / max()) * (h() - 2))
@@ -138,6 +133,73 @@ export function SevCue(props: { level?: string | null; variant?: 'bar' | 'dot' |
   const level = () => props.level ?? 'error'
   const variant = () => props.variant ?? 'bar'
   return <span class={`sevcue ${variant()} sev-${level()}`} aria-label={level()} style={props.style} />
+}
+
+/* ---- Cadence lane · signature element for heartbeats --------------------
+ * Where "now" sits inside the current heartbeat cycle, derived purely from
+ * status / last_ping / period / grace (+ a parent-supplied `now` in ms). We
+ * store NO ping history, so this is not an uptime chart — it's the *approach*
+ * to the next deadline: anchor (last ping, left) → due notch (72%) → grace
+ * band → overdue tail. Reuses the event-scrubber visual language (tick + head).
+ *
+ * Down loudness stays "whisper": the fill/head simply turn severity-red past
+ * the deadline. No pulse, no glow — urgency comes from ordering + color, so
+ * the one-accent rule is untouched. */
+export function CadenceLane(props: {
+  status: string
+  lastPingAt: string | null
+  periodSeconds: number
+  graceSeconds: number
+  now: number
+  h?: number
+}) {
+  const DUE = 72 // % position of the "due" notch — fixed so a wall of lanes aligns
+  const DL = 92 // % position where grace runs out (deadline)
+  const model = () => {
+    const h = props.h ?? 8
+    if (props.status === 'pending' || props.status === 'paused' || !props.lastPingAt) {
+      return { h, pct: null as number | null, color: 'var(--text-mid)' }
+    }
+    const last = Date.parse(props.lastPingAt)
+    if (Number.isNaN(last)) return { h, pct: null as number | null, color: 'var(--text-mid)' }
+    const dueAt = last + props.periodSeconds * 1000
+    const deadline = dueAt + props.graceSeconds * 1000
+    const now = props.now
+    let pct: number
+    let color: string
+    if (now <= dueAt) {
+      pct = ((now - last) / Math.max(1, dueAt - last)) * DUE
+      color = 'var(--text-mid)'
+    } else if (now <= deadline) {
+      pct = DUE + ((now - dueAt) / Math.max(1, deadline - dueAt)) * (DL - DUE)
+      color = 'var(--sev-warning)'
+    } else {
+      const over = (now - deadline) / (props.periodSeconds * 1000)
+      pct = Math.min(100, DL + over * 8)
+      color = 'var(--sev-error)'
+    }
+    return { h, pct: Math.max(0, Math.min(100, pct)), color }
+  }
+  return (
+    <div style={{ position: 'relative', flex: '1', 'min-width': '110px', height: `${model().h}px` }} aria-hidden="true">
+      <div style={{ position: 'absolute', inset: 0, 'border-radius': '999px', background: 'var(--bg-sunken)', border: '1px solid var(--line)', overflow: 'hidden' }}>
+        {/* grace band (due → deadline) */}
+        <div style={{ position: 'absolute', top: 0, bottom: 0, left: '72%', width: '20%', background: 'oklch(0.792 0.108 82 / 0.09)' }} />
+        {/* fill (last ping → now) */}
+        <Show when={model().pct != null}>
+          <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${model().pct}%`, background: model().color, opacity: 0.5 }} />
+        </Show>
+      </div>
+      {/* due notch */}
+      <div style={{ position: 'absolute', top: '-3px', bottom: '-3px', left: '72%', width: '1px', background: 'var(--line-strong)' }} />
+      {/* anchor: last ping */}
+      <div style={{ position: 'absolute', top: '50%', left: 0, width: '6px', height: '6px', 'border-radius': '50%', background: 'var(--text-mid)', transform: 'translate(-1px,-50%)' }} />
+      {/* now head */}
+      <Show when={model().pct != null}>
+        <div style={{ position: 'absolute', top: '-3px', bottom: '-3px', left: `${model().pct}%`, width: '2px', background: 'var(--text-hi)', 'border-radius': '2px', transform: 'translateX(-1px)' }} />
+      </Show>
+    </div>
+  )
 }
 
 /* ---- DSN click-to-copy (underline affordance, no toast) ----------------- */
@@ -175,7 +237,7 @@ export function CopyBlock(props: { value: string; big?: boolean }) {
       <span
         style={{
           display: 'inline-flex', 'align-items': 'center', gap: '4px', flex: 'none',
-          'font-size': '11px', color: copied() ? 'var(--accent-cyan)' : 'var(--text-faint)',
+          'font-size': '11px', color: copied() ? 'var(--accent-ink)' : 'var(--text-faint)',
         }}
       >
         <Icon name={copied() ? 'check' : 'copy'} size={13} />

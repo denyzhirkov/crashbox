@@ -25,7 +25,7 @@ use tokio::time::{interval, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 
 use crate::config::SpikeConfig;
-use crate::notify::{Kind, Notification, NotifyHub};
+use crate::notify::{IssueNotification, Kind, Notification, NotifyHub};
 
 pub fn spawn(
     pool: SqlitePool,
@@ -149,7 +149,7 @@ pub async fn run_once(
 
         let baseline_per_hour = (row.baseline_count as f64) / 23.0;
         let link = notify_hub.build_link(row.issue_id);
-        notify_hub.fire(Notification {
+        notify_hub.fire(Notification::Issue(IssueNotification {
             kind: Kind::Spike,
             project_name: row.project_name,
             project_slug: row.project_slug,
@@ -162,7 +162,7 @@ pub async fn run_once(
             link,
             current_hour: Some(row.current_count),
             baseline_per_hour: Some(baseline_per_hour),
-        });
+        }));
         fired += 1;
     }
     if fired > 0 {

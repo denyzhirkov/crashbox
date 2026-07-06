@@ -14,6 +14,7 @@ pub struct AppState {
     pub db: SqlitePool,
     pub rate_limiter: Arc<RateLimiter>,
     pub log_rate_limiter: Arc<RateLimiter>,
+    pub heartbeat_rate_limiter: Arc<RateLimiter>,
     pub notify: Arc<NotifyHub>,
     pub livelog: Arc<LiveLogHub>,
     pub metrics: MetricsHandle,
@@ -26,6 +27,8 @@ impl AppState {
         ));
         let log_rate_limiter =
             Arc::new(RateLimiter::new(config.livelog.max_per_minute_per_project));
+        let heartbeat_rate_limiter =
+            Arc::new(RateLimiter::new(config.heartbeat.max_pings_per_minute));
         let notify = Arc::new(NotifyHub::from_config(&config));
         let livelog = Arc::new(LiveLogHub::from_config(&config.livelog));
         Self {
@@ -33,6 +36,7 @@ impl AppState {
             db,
             rate_limiter,
             log_rate_limiter,
+            heartbeat_rate_limiter,
             notify,
             livelog,
             metrics,

@@ -93,6 +93,25 @@ export type IssueFilters = {
 
 export type SnoozeAction = '1h' | '1d' | '1w' | 'forever' | 'wake'
 
+export type HeartbeatStatus = 'pending' | 'up' | 'down' | 'paused'
+
+/** Dead-man's-switch monitor: a cron/service pings `ping_url` every `period_seconds`; silence
+ *  past `period + grace` flips it down server-side. The client only renders state. */
+export type HeartbeatMonitor = {
+  id: number
+  project_id: number
+  name: string
+  ping_key: string
+  period_seconds: number
+  grace_seconds: number
+  status: HeartbeatStatus
+  last_ping_at: string | null
+  last_transition_at: string
+  created_at: string
+  updated_at: string
+  ping_url: string
+}
+
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
 
 /** One ephemeral live-log line. Mirrors backend `livelog::LogRecord` (RAM-only, never persisted). */

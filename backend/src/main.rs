@@ -47,8 +47,14 @@ async fn main() -> anyhow::Result<()> {
     };
     let state = AppState::new(cfg.clone(), pool.clone(), metrics);
     jobs::spike::spawn(
-        pool,
+        pool.clone(),
         Arc::new(cfg.spike.clone()),
+        state.notify.clone(),
+        cancel.clone(),
+    );
+    jobs::heartbeat::spawn(
+        pool,
+        Arc::new(cfg.heartbeat.clone()),
         state.notify.clone(),
         cancel.clone(),
     );

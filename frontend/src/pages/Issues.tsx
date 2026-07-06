@@ -166,6 +166,7 @@ export default function IssuesPage() {
           <Show when={liveLogsEnabled()}>
             <A href={`/projects/${projectId()}/logs`} class="btn ghost sm">live logs</A>
           </Show>
+          <A href={`/projects/${projectId()}/heartbeats`} class="btn ghost sm">heartbeats</A>
           <A href={`/projects/${projectId()}/settings`} class="btn ghost sm">settings</A>
         </div>
       </div>

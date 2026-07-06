@@ -1,6 +1,7 @@
 import type {
   DsnInfo,
   EventDetail,
+  HeartbeatMonitor,
   Issue,
   IssueFilters,
   Project,
@@ -88,6 +89,24 @@ export const api = {
   events: {
     get: (id: number) => req<EventDetail>(`/api/events/${id}`),
   },
+  heartbeats: {
+    list: (projectId: number) =>
+      req<HeartbeatMonitor[]>(`/api/projects/${projectId}/heartbeats`),
+    create: (projectId: number, body: { name: string; period_seconds: number; grace_seconds?: number }) =>
+      req<HeartbeatMonitor>(`/api/projects/${projectId}/heartbeats`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    update: (
+      id: number,
+      body: { name?: string; period_seconds?: number; grace_seconds?: number; status?: 'paused' | 'pending' },
+    ) =>
+      req<HeartbeatMonitor>(`/api/heartbeats/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    remove: (id: number) => req<void>(`/api/heartbeats/${id}`, { method: 'DELETE' }),
+  },
   livelog: {
     // The live-log stream is consumed via EventSource, not fetch — this just builds the URL.
     // Cookies ride along automatically on same-origin EventSource requests.
@@ -105,6 +124,8 @@ export type {
   DsnInfo,
   EventDetail,
   EventRow,
+  HeartbeatMonitor,
+  HeartbeatStatus,
   Issue,
   IssueFilters,
   LogLevel,

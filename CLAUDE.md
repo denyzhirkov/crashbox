@@ -10,21 +10,30 @@ Tiny self-hosted, Sentry-compatible error tracking server with a lightweight UI.
 crashbox/
 ├─ backend/
 │  ├─ Cargo.toml
+│  ├─ rust-toolchain.toml     # pinned compiler (CI == local)
 │  ├─ migrations/             # SQLx migrations, SQLite-first
+│  ├─ tests/                  # integration suites + fixtures/envelopes/
 │  └─ src/
 │     ├─ main.rs              # bin entry, wiring only
+│     ├─ lib.rs               # module map (integration tests import via crate)
 │     ├─ config.rs            # CRASHBOX_* env → validated Config
-│     ├─ app_state.rs         # AppState (db pool, config, services)
+│     ├─ app_state.rs         # AppState (db pool, config, limiters, hubs)
+│     ├─ bootstrap.rs  cli.rs  metrics_layer.rs
 │     ├─ http/                # Axum routes — thin handlers
-│     │  ├─ routes.rs  auth.rs  ingest.rs  projects.rs  issues.rs  health.rs
+│     │  ├─ routes.rs  auth.rs  dsn_auth.rs  ingest.rs  projects.rs  issues.rs
+│     │  ├─ heartbeats.rs  livelog.rs  health.rs  assets.rs  error.rs
 │     ├─ sentry/              # protocol layer — envelope, dsn, normalize, grouping
-│     ├─ db/                  # SQLx repositories per aggregate
+│     ├─ db/                  # SQLx repositories per aggregate (incl. heartbeats.rs)
+│     ├─ ingest/              # per-key token-bucket rate limiter
+│     ├─ notify/              # notification pipeline — telegram, discord, webhook
+│     ├─ livelog/             # RAM-only live-log hub (ring buffer + broadcast)
 │     ├─ security/            # password hashing, sessions
-│     └─ jobs/                # background cleanup / retention
+│     └─ jobs/                # cleanup (retention), spike detection, heartbeat sweep
 ├─ frontend/                  # SolidJS + Vite + TailwindCSS
-│  └─ src/  api/ pages/ components/
+│  └─ src/  api/ pages/ components/ lib/
+│     # pages: Login Projects Issues IssueDetail Settings LiveLogs Heartbeats
 ├─ Dockerfile  docker-compose.yml
-├─ docs/  protocol.md  configuration.md  development.md
+├─ docs/  protocol.md  configuration.md  logs.md  heartbeats.md  development.md
 ```
 
 - `http/*` handlers are **thin wrappers**. No business logic — only request decode, call into the right module, serialize the response.
@@ -54,7 +63,7 @@ crashbox/
 
 ## Performance & Resilience
 
-- **Single container, low idle footprint.** No background workers beyond the retention job. No Kafka, ClickHouse, Redis. SQLite + the Rust process is the whole runtime.
+- **Single container, low idle footprint.** The only background work is three in-process tick jobs (retention cleanup, spike detection, heartbeat sweep) — no external workers, no Kafka, ClickHouse, Redis. SQLite + the Rust process is the whole runtime.
 - **Bounded everything.** Body size (`CRASHBOX_MAX_ENVELOPE_BYTES`, `CRASHBOX_MAX_EVENT_BYTES`), per-project rate limit (`CRASHBOX_MAX_EVENTS_PER_MINUTE_PER_PROJECT`), max events per issue, retention days. Every limit is enforced — no unbounded loops, no unbounded allocations.
 - **Graceful degradation:**
   - Malformed envelope → 400 with a short reason, no panic.

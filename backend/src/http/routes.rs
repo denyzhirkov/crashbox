@@ -1,10 +1,10 @@
 use axum::extract::DefaultBodyLimit;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use tower_http::trace::TraceLayer;
 
 use crate::app_state::AppState;
-use crate::http::{assets, auth, health, ingest, issues, livelog, projects};
+use crate::http::{assets, auth, health, heartbeats, ingest, issues, livelog, projects};
 use crate::metrics_layer;
 
 pub fn build(state: AppState) -> Router {
@@ -20,6 +20,18 @@ pub fn build(state: AppState) -> Router {
         )
         .layer(DefaultBodyLimit::max(envelope_limit));
 
+    // Heartbeat pings are public (authenticated by the unguessable key alone). GET is
+    // supported so a bare `curl <url>` at the end of a cron line works.
+    let ping_router = Router::new()
+        .route(
+            "/ping/:ping_key",
+            get(heartbeats::ping).post(heartbeats::ping),
+        )
+        .route(
+            "/ping/:ping_key/",
+            get(heartbeats::ping).post(heartbeats::ping),
+        );
+
     let admin_api = Router::new()
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/logout", post(auth::logout))
@@ -33,6 +45,14 @@ pub fn build(state: AppState) -> Router {
         .route("/api/projects/:id/dsn", get(projects::dsn))
         .route("/api/projects/:id/rotate-key", post(projects::rotate_key))
         .route("/api/projects/:project_id/issues", get(issues::list))
+        .route(
+            "/api/projects/:project_id/heartbeats",
+            get(heartbeats::list).post(heartbeats::create),
+        )
+        .route(
+            "/api/heartbeats/:id",
+            delete(heartbeats::remove).patch(heartbeats::patch),
+        )
         .route("/api/issues/:id", get(issues::get).patch(issues::patch))
         .route("/api/issues/:id/events", get(issues::list_events))
         .route("/api/events/:id", get(issues::get_event));
@@ -42,6 +62,7 @@ pub fn build(state: AppState) -> Router {
         .route("/readyz", get(health::readyz))
         .route("/metrics", get(metrics_layer::render))
         .merge(ingest_router)
+        .merge(ping_router)
         .merge(admin_api);
 
     // Live Logs routes are mounted only when the feature is enabled, so a disabled deploy returns

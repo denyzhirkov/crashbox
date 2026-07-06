@@ -127,20 +127,25 @@ backend/
     config.rs           CRASHBOX_* env → validated Config
     app_state.rs        Arc<Config> + db pool + rate limiter
     bootstrap.rs        idempotent admin/project creation
-    db/                 SQLx repositories
+    db/                 SQLx repositories (projects, issues, events, users, heartbeats)
     http/               Axum handlers + routes + assets (rust-embed)
     ingest/             rate limiter
-    jobs/cleanup.rs     retention sweep
+    jobs/               cleanup (retention), spike detection, heartbeat sweep
+    livelog/            in-memory live-log hub (ring buffer + broadcast)
+    notify/             notification pipeline (telegram, discord, generic webhook)
     security/           argon2 + sessions
     sentry/             envelope parser, auth, normalize, grouping, dsn
-  tests/                integration tests (ingest, admin_api, retention)
+  tests/                integration tests (ingest, admin_api, retention, notify,
+                        spike, livelog, heartbeat, heartbeat_sweep, …)
   tests/fixtures/       real SDK envelopes
 frontend/
   src/api/              typed fetch wrapper + shared types
   src/components/       AppShell, EdgeBar, RequireAuth
   src/lib/              auth context, theme, time formatting
-  src/pages/            Login, Projects, Issues, IssueDetail, Settings
-docs/                   protocol.md, configuration.md, development.md, ui-design.md
+  src/pages/            Login, Projects, Issues, IssueDetail, Settings,
+                        LiveLogs, Heartbeats
+docs/                   protocol.md, configuration.md, logs.md, heartbeats.md,
+                        development.md, ui-design.md
 examples/               sentry-node, sentry-browser
 Dockerfile docker-compose.yml .dockerignore
 ```

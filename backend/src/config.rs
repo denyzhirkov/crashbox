@@ -34,6 +34,7 @@ pub struct Config {
     pub security: SecurityConfig,
     pub notify: NotifyConfig,
     pub livelog: LiveLogConfig,
+    pub heartbeat: HeartbeatConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +129,18 @@ pub struct LiveLogConfig {
     pub max_subscribers_per_project: usize,
 }
 
+/// Heartbeat monitors (dead-man's switch): cron jobs ping us on a fixed period; silence past
+/// period + grace flips the monitor down and alerts via the notification pipeline.
+#[derive(Debug, Clone)]
+pub struct HeartbeatConfig {
+    /// How often the sweep job looks for overdue monitors. Default 30s. `0` disables the job
+    /// (pings are still recorded, but nothing flips to `down`).
+    pub sweep_interval_seconds: u64,
+    /// Per-monitor cap on accepted pings. Duplicate pings are cheap, but a runaway loop
+    /// shouldn't be allowed to hammer the DB.
+    pub max_pings_per_minute: u32,
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         Ok(Self {
@@ -215,6 +228,13 @@ impl Config {
                     "CRASHBOX_MAX_LOG_SUBSCRIBERS_PER_PROJECT",
                     "50",
                 )?,
+            },
+            heartbeat: HeartbeatConfig {
+                sweep_interval_seconds: parse_env(
+                    "CRASHBOX_HEARTBEAT_SWEEP_INTERVAL_SECONDS",
+                    "30",
+                )?,
+                max_pings_per_minute: parse_env("CRASHBOX_HEARTBEAT_MAX_PINGS_PER_MINUTE", "120")?,
             },
         })
     }

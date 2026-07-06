@@ -2,7 +2,8 @@
 // top-bar button / project chip (via the shared `paletteOpen` signal).
 //
 // Context-aware: on an issue you get resolve/snooze/copy-event-id; on a project you get
-// copy-DSN/settings/filter; everywhere you get project switching + session controls.
+// copy-DSN/settings/filter + any DOWN heartbeat monitors surfaced first as alerts;
+// everywhere you get project switching + session controls.
 // Keyboard: arrows nav, Enter run, Esc / click-outside close.
 
 import { useLocation, useNavigate } from '@solidjs/router'
@@ -12,11 +13,11 @@ import { useAuth } from '../lib/auth-context'
 import { paletteOpen, setPaletteOpen } from '../lib/palette'
 import { Icon, Voice } from './primitives'
 
-type Category = 'issue' | 'project' | 'nav' | 'session'
-type Command = { id: string; category: Category; icon: string; label: string; hint?: string; accent?: boolean; run: () => void | Promise<void> }
+type Category = 'alert' | 'issue' | 'project' | 'nav' | 'session'
+type Command = { id: string; category: Category; icon: string; label: string; hint?: string; accent?: boolean; danger?: boolean; run: () => void | Promise<void> }
 
-const CAT_LABEL: Record<Category, string> = { nav: 'navigate', issue: 'this issue', project: 'this project', session: 'session' }
-const CAT_ORDER: Category[] = ['issue', 'project', 'nav', 'session']
+const CAT_LABEL: Record<Category, string> = { alert: 'alerts', nav: 'navigate', issue: 'this issue', project: 'this project', session: 'session' }
+const CAT_ORDER: Category[] = ['alert', 'issue', 'project', 'nav', 'session']
 
 export function CommandPalette() {
   const [query, setQuery] = createSignal('')
@@ -51,6 +52,7 @@ export function CommandPalette() {
   const [issue] = createResource(() => (paletteOpen() ? issueId() : null), (id) => api.issues.get(id))
   const [events] = createResource(() => (paletteOpen() ? issueId() : null), (id) => api.issues.events(id, 1))
   const [projects] = createResource(() => (paletteOpen() ? 'load' : null), () => api.projects.overview())
+  const [monitors] = createResource(() => (paletteOpen() ? projectId() : null), (id) => api.heartbeats.list(id))
 
   const copy = async (text?: string) => {
     if (!text) return
@@ -63,6 +65,19 @@ export function CommandPalette() {
 
   const commands = createMemo<Command[]>(() => {
     const out: Command[] = []
+
+    // context: alerts — DOWN heartbeat monitors for the current project, surfaced first
+    const pidForAlerts = projectId()
+    if (pidForAlerts != null) {
+      for (const m of monitors() ?? []) {
+        if (m.status !== 'down') continue
+        out.push({
+          id: `hb-${m.id}`, category: 'alert', icon: 'pulse',
+          label: `${m.name} is down`, hint: 'view heartbeats', accent: true, danger: true,
+          run: () => nav(`/projects/${pidForAlerts}/heartbeats`),
+        })
+      }
+    }
 
     // context: issue
     const iid = issueId()
@@ -86,6 +101,8 @@ export function CommandPalette() {
       out.push({ id: 'pissues', category: 'project', icon: 'bolt', label: 'view issues', run: () => nav(`/projects/${pid}/issues`) })
       if (auth.user()?.live_logs_enabled !== false)
         out.push({ id: 'plogs', category: 'project', icon: 'clock', label: 'view live logs', run: () => nav(`/projects/${pid}/logs`) })
+      const downN = (monitors() ?? []).filter((m) => m.status === 'down').length
+      out.push({ id: 'pheartbeats', category: 'project', icon: 'pulse', label: 'view heartbeats', hint: downN > 0 ? `${downN} down` : undefined, accent: downN > 0, run: () => nav(`/projects/${pid}/heartbeats`) })
       out.push({ id: 'psettings', category: 'project', icon: 'ext', label: 'project settings', run: () => nav(`/projects/${pid}/settings`) })
       out.push({ id: 'pfatals', category: 'project', icon: 'search', label: 'filter · unresolved fatals', run: () => nav(`/projects/${pid}/issues?q=level:fatal`) })
     }
@@ -194,12 +211,12 @@ export function CommandPalette() {
                             style={{ position: 'relative', display: 'flex', 'align-items': 'center', gap: '12px', padding: '9px 12px', 'border-radius': '7px', cursor: 'pointer', background: active() ? 'oklch(1 0 0 / 0.05)' : 'transparent' }}
                           >
                             <Show when={active()}>
-                              <span style={{ position: 'absolute', left: 0, top: '7px', bottom: '7px', width: '2.5px', 'border-radius': '999px', background: 'var(--accent-grad-v)' }} />
+                              <span style={{ position: 'absolute', left: 0, top: '7px', bottom: '7px', width: '2.5px', 'border-radius': '999px', background: 'var(--accent)' }} />
                             </Show>
-                            <Icon name={c.icon} size={14} style={{ color: active() ? 'var(--accent-cyan)' : 'var(--text-faint)' }} />
+                            <Icon name={c.icon} size={14} style={{ color: c.danger ? 'var(--sev-error)' : active() ? 'var(--accent-ink)' : 'var(--text-faint)' }} />
                             <span class="mono" style={{ flex: '1', 'min-width': 0, 'font-size': '13px', color: active() ? 'var(--text-hi)' : 'var(--text)' }}>{c.label}</span>
                             <Show when={c.hint}>
-                              <span class="mono" style={{ 'font-size': '11.5px', color: c.accent ? 'var(--accent-ink)' : 'var(--text-faint)' }}>{c.hint}</span>
+                              <span class="mono" style={{ 'font-size': '11.5px', color: c.danger ? 'var(--sev-error)' : c.accent ? 'var(--accent-ink)' : 'var(--text-faint)' }}>{c.hint}</span>
                             </Show>
                             <Show when={active()}>
                               <span class="kbd"><Icon name="enter" size={11} /></span>
