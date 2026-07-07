@@ -94,12 +94,14 @@ async fn ingest(addr: SocketAddr, ty: &str, value: &str) {
 
 async fn list(c: &reqwest::Client, addr: SocketAddr, status: &str) -> Vec<Value> {
     let url = format!("http://{addr}/api/projects/1/issues?status={status}");
-    c.get(url).send().await.unwrap().json().await.unwrap()
+    let page: Value = c.get(url).send().await.unwrap().json().await.unwrap();
+    page["items"].as_array().cloned().unwrap_or_default()
 }
 
 async fn list_default(c: &reqwest::Client, addr: SocketAddr) -> Vec<Value> {
     let url = format!("http://{addr}/api/projects/1/issues");
-    c.get(url).send().await.unwrap().json().await.unwrap()
+    let page: Value = c.get(url).send().await.unwrap().json().await.unwrap();
+    page["items"].as_array().cloned().unwrap_or_default()
 }
 
 #[tokio::test]

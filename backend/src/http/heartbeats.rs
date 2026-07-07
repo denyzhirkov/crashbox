@@ -4,7 +4,7 @@
 //! as DSN-key ingest) and accepts both GET and POST so a bare `curl <url>` at the end of a
 //! cron line works. It must never panic on garbage input.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -16,6 +16,7 @@ use crate::app_state::AppState;
 use crate::db::heartbeats::{self, HeartbeatMonitor};
 use crate::db::projects;
 use crate::http::error::{AppError, AppResult};
+use crate::http::Paginated;
 use crate::notify::{HeartbeatKind, HeartbeatNotification, Notification};
 use crate::security::sessions::AuthUser;
 
@@ -271,6 +272,32 @@ pub async fn patch(
         .await?
         .ok_or(AppError::NotFound)?;
     Ok(Json(to_response(&state, monitor)))
+}
+
+/// GET /api/heartbeats/:id/history — status transitions, newest first. History depth is
+/// bounded by the retention job (CRASHBOX_RETENTION_DAYS).
+pub async fn history(
+    _user: AuthUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Query(q): Query<HistoryQuery>,
+) -> AppResult<Json<Paginated<heartbeats::HeartbeatTransition>>> {
+    heartbeats::find_by_id(&state.db, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let total = heartbeats::count_transitions(&state.db, id).await?;
+    let items =
+        heartbeats::list_transitions(&state.db, id, q.limit.unwrap_or(50), q.offset.unwrap_or(0))
+            .await?;
+    Ok(Json(Paginated { items, total }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HistoryQuery {
+    #[serde(default)]
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub offset: Option<i64>,
 }
 
 /// DELETE /api/heartbeats/:id (admin only) — invalidates the ping URL immediately.

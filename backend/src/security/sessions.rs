@@ -26,6 +26,8 @@ pub struct AuthUser {
     pub id: i64,
     pub email: String,
     pub is_admin: bool,
+    /// True when authenticated by a `scope = 'read'` API token. Sessions are never read-only.
+    pub read_only: bool,
 }
 
 pub async fn create(pool: &SqlitePool, user_id: i64) -> sqlx::Result<(String, DateTime<Utc>)> {
@@ -81,6 +83,7 @@ pub async fn lookup(pool: &SqlitePool, session_id: &str) -> sqlx::Result<Option<
         id,
         email,
         is_admin,
+        read_only: false,
     }))
 }
 
@@ -143,6 +146,10 @@ async fn auth_via_bearer(state: &AppState, parts: &Parts) -> Result<Option<AuthU
 
 /// Accepts either credential: session cookie first, then `Authorization: Bearer cbx_…`.
 /// Every admin endpoint that takes `AuthUser` is automatically usable with API tokens.
+///
+/// Scope enforcement lives here, in the single extraction point: a `read`-scoped token
+/// authenticates only GET/HEAD requests and gets a 403 on anything mutating, so no handler
+/// has to remember to check.
 #[axum::async_trait]
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = AppError;
@@ -155,6 +162,14 @@ impl FromRequestParts<AppState> for AuthUser {
             return Ok(user);
         }
         if let Some(user) = auth_via_bearer(state, parts).await? {
+            let is_read =
+                parts.method == axum::http::Method::GET || parts.method == axum::http::Method::HEAD;
+            if user.read_only && !is_read {
+                return Err(AppError::ForbiddenMsg(
+                    "this API token is read-only (scope=read); use a scope=full token for writes"
+                        .into(),
+                ));
+            }
             return Ok(user);
         }
         Err(AppError::Unauthorized)

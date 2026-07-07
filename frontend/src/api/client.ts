@@ -6,6 +6,7 @@ import type {
   HeartbeatMonitor,
   Issue,
   IssueFilters,
+  Paginated,
   Project,
   ProjectOverview,
   User,
@@ -72,7 +73,7 @@ export const api = {
       // ?tag=key=value can repeat — URLSearchParams.append handles that.
       for (const [k, v] of tags) qs.append('tag', `${k}=${v}`)
       const suffix = qs.toString() ? `?${qs}` : ''
-      return req<Issue[]>(`/api/projects/${projectId}/issues${suffix}`)
+      return req<Paginated<Issue>>(`/api/projects/${projectId}/issues${suffix}`)
     },
     get: (id: number) => req<Issue>(`/api/issues/${id}`),
     setStatus: (id: number, status: 'resolved' | 'unresolved') =>
@@ -86,10 +87,19 @@ export const api = {
         body: JSON.stringify({ snooze: action }),
       }),
     events: (id: number, limit = 50, offset = 0) =>
-      req<EventRow[]>(`/api/issues/${id}/events?limit=${limit}&offset=${offset}`),
+      req<Paginated<EventRow>>(`/api/issues/${id}/events?limit=${limit}&offset=${offset}`),
   },
   events: {
     get: (id: number) => req<EventDetail>(`/api/events/${id}`),
+    // Project-wide feed; `q` is full-text over the raw event payload (FTS5).
+    search: (projectId: number, opts: { q?: string; level?: string; limit?: number; offset?: number } = {}) => {
+      const qs = new URLSearchParams()
+      for (const [k, v] of Object.entries(opts)) {
+        if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+      }
+      const suffix = qs.toString() ? `?${qs}` : ''
+      return req<Paginated<EventRow>>(`/api/projects/${projectId}/events${suffix}`)
+    },
   },
   tokens: {
     list: () => req<ApiToken[]>('/api/tokens'),
@@ -144,6 +154,7 @@ export type {
   IssueFilters,
   LogLevel,
   LogRecord,
+  Paginated,
   Project,
   ProjectOverview,
   User,

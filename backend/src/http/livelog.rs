@@ -233,6 +233,57 @@ pub async fn logs_stream(
         .into_response()
 }
 
+/// `GET /api/projects/:id/logs/recent` — one-shot snapshot of the in-RAM scrollback, oldest
+/// first, same filters as the stream plus `limit` (keeps the newest N after filtering).
+/// The fetch-once counterpart to the SSE tail: an API client gets current logs in a single
+/// request instead of opening a stream and cutting it off.
+pub async fn logs_recent(
+    _user: AuthUser,
+    State(state): State<AppState>,
+    Path(project_id): Path<i64>,
+    Query(q): Query<RecentQuery>,
+) -> axum::response::Response {
+    if !state.config.livelog.enabled {
+        return refuse(StatusCode::SERVICE_UNAVAILABLE, "live logs are disabled");
+    }
+    match projects::find_by_id(&state.db, project_id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return refuse(StatusCode::NOT_FOUND, "unknown project"),
+        Err(e) => {
+            tracing::error!(error = %e, "db error resolving project for recent logs");
+            return refuse(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+        }
+    }
+
+    let filter = StreamFilter {
+        level: q.level,
+        logger: q.logger,
+        q: q.q,
+    }
+    .compile();
+    let mut items: Vec<_> = state
+        .livelog
+        .snapshot(project_id)
+        .into_iter()
+        .filter(|rec| filter.matches(rec))
+        .collect();
+    let limit = q.limit.unwrap_or(usize::MAX).max(1);
+    if items.len() > limit {
+        items.drain(..items.len() - limit);
+    }
+    Json(json!({ "items": items, "count": items.len() })).into_response()
+}
+
+/// Same knobs as `StreamFilter` plus `limit`. Kept as a flat struct — `serde(flatten)` breaks
+/// numeric fields under axum's urlencoded `Query` deserializer.
+#[derive(Debug, Default, Deserialize)]
+pub struct RecentQuery {
+    level: Option<String>,
+    logger: Option<String>,
+    q: Option<String>,
+    limit: Option<usize>,
+}
+
 // `Sse` requires `Item = Result<Event, E>`, so the wrap is mandatory despite always being `Ok`.
 #[allow(clippy::unnecessary_wraps)]
 fn sse_event(rec: &LogRecord) -> Result<Event, Infallible> {

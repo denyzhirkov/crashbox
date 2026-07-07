@@ -247,6 +247,48 @@ async fn stream_replays_snapshot_and_applies_level_filter() {
 }
 
 #[tokio::test]
+async fn recent_returns_filtered_snapshot_without_streaming() {
+    let (addr, hub) = spawn_app().await;
+    for (level, msg) in [("info", "alpha"), ("error", "beta"), ("error", "gamma")] {
+        hub.publish(
+            1,
+            crashbox::livelog::LogRecord::from_loose(
+                &serde_json::json!({ "level": level, "message": msg }),
+                1024,
+            )
+            .expect("rec"),
+        );
+    }
+
+    let client = logged_in_client(addr).await;
+    let body: serde_json::Value = client
+        .get(format!(
+            "http://{addr}/api/projects/1/logs/recent?level=error&limit=1"
+        ))
+        .send()
+        .await
+        .expect("send")
+        .json()
+        .await
+        .expect("json");
+    // level=error drops alpha; limit=1 keeps only the newest of the remaining two.
+    assert_eq!(body["count"], 1);
+    assert_eq!(body["items"][0]["message"], "gamma");
+
+    // Unauthenticated → 401; unknown project → 404.
+    let resp = reqwest::get(format!("http://{addr}/api/projects/1/logs/recent"))
+        .await
+        .expect("send");
+    assert_eq!(resp.status().as_u16(), 401);
+    let resp = client
+        .get(format!("http://{addr}/api/projects/999/logs/recent"))
+        .send()
+        .await
+        .expect("send");
+    assert_eq!(resp.status().as_u16(), 404);
+}
+
+#[tokio::test]
 async fn disabled_feature_unmounts_routes() {
     let (addr, _hub) = spawn_app_with(false).await;
     let client = logged_in_client(addr).await;

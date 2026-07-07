@@ -24,6 +24,9 @@ pub struct CreateToken {
     /// Omitted or null = the token never expires (deliberate default for a single-admin box).
     #[serde(default)]
     pub expires_in_days: Option<i64>,
+    /// "full" (default) or "read". Read tokens authenticate GET/HEAD only.
+    #[serde(default)]
+    pub scope: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -75,6 +78,16 @@ pub async fn create(
         }
     };
 
+    let scope = match body.scope.as_deref() {
+        None => tokens::SCOPE_FULL,
+        Some(s) if s == tokens::SCOPE_FULL || s == tokens::SCOPE_READ => s,
+        Some(_) => {
+            return Err(AppError::BadRequest(
+                "scope must be 'full' or 'read'".into(),
+            ))
+        }
+    };
+
     let token = token_gen::generate();
     let prefix = token_gen::display_prefix(&token);
     let id = tokens::insert(
@@ -83,6 +96,7 @@ pub async fn create(
         name,
         &token_gen::hash(&token),
         &prefix,
+        scope,
         expires_at.as_deref(),
     )
     .await?;

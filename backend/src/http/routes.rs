@@ -1,5 +1,5 @@
 use axum::extract::DefaultBodyLimit;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::Router;
 use tower_http::trace::TraceLayer;
 
@@ -48,6 +48,10 @@ pub fn build(state: AppState) -> Router {
         .route("/api/projects/:id/rotate-key", post(projects::rotate_key))
         .route("/api/projects/:project_id/issues", get(issues::list))
         .route(
+            "/api/projects/:project_id/events",
+            get(issues::project_events),
+        )
+        .route(
             "/api/projects/:project_id/heartbeats",
             get(heartbeats::list).post(heartbeats::create),
         )
@@ -55,7 +59,12 @@ pub fn build(state: AppState) -> Router {
             "/api/heartbeats/:id",
             delete(heartbeats::remove).patch(heartbeats::patch),
         )
-        .route("/api/issues/:id", get(issues::get).patch(issues::patch))
+        .route("/api/heartbeats/:id/history", get(heartbeats::history))
+        .route("/api/issues", patch(issues::bulk_patch))
+        .route(
+            "/api/issues/:id",
+            get(issues::get).patch(issues::patch).delete(issues::remove),
+        )
         .route("/api/issues/:id/events", get(issues::list_events))
         .route("/api/events/:id", get(issues::get_event));
 
@@ -76,7 +85,8 @@ pub fn build(state: AppState) -> Router {
             .layer(DefaultBodyLimit::max(log_batch_limit));
         router = router
             .merge(logs_router)
-            .route("/api/projects/:id/logs/stream", get(livelog::logs_stream));
+            .route("/api/projects/:id/logs/stream", get(livelog::logs_stream))
+            .route("/api/projects/:id/logs/recent", get(livelog::logs_recent));
     }
 
     router

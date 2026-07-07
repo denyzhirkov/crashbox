@@ -75,7 +75,13 @@ GET    /api/projects/:id/heartbeats        list (each item includes ping_url)
 POST   /api/projects/:id/heartbeats        { name, description?, period_seconds, grace_seconds? = 60 }
 PATCH  /api/heartbeats/:id                 { name?, description?, period_seconds?, grace_seconds?, status? }
 DELETE /api/heartbeats/:id                 204; the ping URL dies with it
+GET    /api/heartbeats/:id/history         status transitions, newest first (paginated)
 ```
+
+`history` returns `{ "items": [{ "from_status", "to_status", "at" }, …], "total": n }` —
+every flip the monitor went through (first ping, downs, recoveries, pause/resume), so an API
+client can answer "how often did this fail last week" without scraping notifications. Depth
+is bounded by the retention job: rows older than `CRASHBOX_RETENTION_DAYS` are pruned.
 
 `status` accepts only `"paused"` (pause) and `"pending"` (resume) — `up`/`down` are owned by
 pings and the sweep. Bounds: `period_seconds` 10 s … 30 d, `grace_seconds` 0 … 24 h.

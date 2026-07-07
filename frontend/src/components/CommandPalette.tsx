@@ -50,7 +50,7 @@ export function CommandPalette() {
 
   // Fetch context only while open, to keep the palette cheap when idle.
   const [issue] = createResource(() => (paletteOpen() ? issueId() : null), (id) => api.issues.get(id))
-  const [events] = createResource(() => (paletteOpen() ? issueId() : null), (id) => api.issues.events(id, 1))
+  const [events] = createResource(() => (paletteOpen() ? issueId() : null), (id) => api.issues.events(id, 1).then((page) => page.items))
   const [projects] = createResource(() => (paletteOpen() ? 'load' : null), () => api.projects.overview())
   const [monitors] = createResource(() => (paletteOpen() ? projectId() : null), (id) => api.heartbeats.list(id))
 

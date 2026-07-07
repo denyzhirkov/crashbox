@@ -7,11 +7,8 @@ import { useAuth } from '../lib/auth-context'
 export function Wordmark(props: { small?: boolean; onClick?: () => void; href?: string }) {
   const mark = (
     <>
-      <span style={{ position: 'relative', width: '16px', height: '16px', flex: 'none' }}>
-        <span style={{ position: 'absolute', inset: 0, 'border-radius': '5px', background: 'var(--accent-grad)', opacity: 0.92 }} />
-        <span style={{ position: 'absolute', inset: '3px', 'border-radius': '2px', background: 'var(--bg-base)' }} />
-        <span style={{ position: 'absolute', inset: '6px', 'border-radius': '1px', background: 'var(--accent-grad)' }} />
-      </span>
+      {/* the bolt — same file the favicon uses, so the brand mark has one source */}
+      <img src="/favicon.svg" alt="" width={17} height={16} style={{ flex: 'none', display: 'block' }} />
       <span class="mono" style={{ 'font-size': props.small ? '13px' : '14px', 'font-weight': 600, 'letter-spacing': '-0.02em', color: 'var(--text-hi)' }}>
         crashbox
       </span>

@@ -101,6 +101,18 @@ Optional query filters (applied server-side to reduce bandwidth, AND-combined):
 
 The dashboard adds further **client-side** conveniences on top of the live stream: a severity floor, free-text search across message/logger/attrs, pause/resume with a buffered "N new lines" pill, group-by-logger, a 60-second throughput sparkline, and auto-scroll. The client keeps at most 1000 lines in memory.
 
+## Fetching a snapshot (no stream)
+
+```
+GET /api/projects/:id/logs/recent?level=…&logger=…&q=…&limit=…
+```
+
+One-shot copy of the current ring buffer as `{ "items": […], "count": n }`, oldest first —
+the same filters as the stream, plus `limit` to keep only the newest N after filtering.
+Built for API clients (scripts, agents) that want "what's in the logs right now" as a single
+request instead of opening an SSE connection and cutting it off. Same session/bearer auth as
+the stream; remember the buffer is RAM-only, so this is a snapshot, not history.
+
 ---
 
 ## Limitations (by design)

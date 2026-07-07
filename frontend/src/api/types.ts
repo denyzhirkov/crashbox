@@ -87,8 +87,16 @@ export type IssueFilters = {
   environment?: string
   release?: string
   query?: string
+  sort?: 'last_seen' | 'first_seen' | 'event_count'
+  order?: 'asc' | 'desc'
   limit?: number
   offset?: number
+}
+
+/** List-endpoint envelope: one page of results plus the total match count. */
+export type Paginated<T> = {
+  items: T[]
+  total: number
 }
 
 export type SnoozeAction = '1h' | '1d' | '1w' | 'forever' | 'wake'

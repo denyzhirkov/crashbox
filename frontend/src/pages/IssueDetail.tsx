@@ -29,7 +29,7 @@ export default function IssueDetailPage() {
   const params = useParams<{ issueId: string }>()
   const issueId = () => Number(params.issueId)
   const [issue, { refetch: refetchIssue }] = createResource(issueId, (id) => api.issues.get(id))
-  const [events] = createResource(issueId, (id) => api.issues.events(id))
+  const [events] = createResource(issueId, (id) => api.issues.events(id).then((page) => page.items))
   const [activeEventId, setActiveEventId] = createSignal<number | null>(null)
 
   const currentEventId = () => activeEventId() ?? events()?.[0]?.id ?? null
@@ -311,6 +311,14 @@ function EventBody(props: { detail: EventDetail; issue: Issue }) {
     if (b && Array.isArray(b.values)) return b.values
     return []
   }
+  // Sentry SDKs send breadcrumb timestamps either as ISO strings or as epoch seconds
+  // (number or numeric string); relTime only speaks ISO, so normalize here.
+  const bcTime = (ts: unknown): string => {
+    if (ts == null) return ''
+    if (typeof ts === 'number') return relTime(new Date(ts * 1000).toISOString())
+    if (typeof ts === 'string' && /^\d{9,}(\.\d+)?$/.test(ts)) return relTime(new Date(Number(ts) * 1000).toISOString())
+    return relTime(String(ts))
+  }
   const tags = (): Array<[string, string]> => {
     const t = data()?.tags
     if (t && typeof t === 'object' && !Array.isArray(t)) return Object.entries(t).map(([k, v]) => [k, String(v)])
@@ -345,7 +353,13 @@ function EventBody(props: { detail: EventDetail; issue: Issue }) {
             <For each={breadcrumbs()}>
               {(b, i) => (
                 <div style={{ display: 'flex', 'align-items': 'flex-start', gap: '12px', padding: '6px 0', 'border-bottom': i() < breadcrumbs().length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
-                  <span class="mono tnum" style={{ 'font-size': '11.5px', color: 'var(--text-faint)', width: '64px', flex: 'none', 'text-align': 'right' }}>{b.timestamp ? relTime(b.timestamp) : ''}</span>
+                  <span
+                    class="mono tnum"
+                    style={{ 'font-size': '11.5px', color: 'var(--text-faint)', width: '64px', flex: 'none', 'text-align': 'right', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}
+                    title={b.timestamp != null ? String(b.timestamp) : undefined}
+                  >
+                    {bcTime(b.timestamp)}
+                  </span>
                   <SevCue level={bcLevel(b.level)} variant="dot" style={{ 'margin-top': '5px' }} />
                   <span class="mono" style={{ 'font-size': '11.5px', color: 'var(--text-lo)', width: '90px', flex: 'none' }}>{b.category ?? '—'}</span>
                   <span class="mono" style={{ flex: '1', 'min-width': 0, 'font-size': '12.5px', color: 'var(--text)' }}>{b.message ?? ''}</span>

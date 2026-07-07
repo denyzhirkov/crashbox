@@ -10,18 +10,23 @@ use crate::security::sessions::AuthUser;
 /// hot path from issuing a write per request.
 const LAST_USED_REFRESH_SECONDS: i64 = 300;
 
+pub const SCOPE_FULL: &str = "full";
+pub const SCOPE_READ: &str = "read";
+
 #[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct ApiToken {
     pub id: i64,
     pub user_id: i64,
     pub name: String,
     pub token_prefix: String,
+    pub scope: String,
     pub created_at: String,
     pub expires_at: Option<String>,
     pub last_used_at: Option<String>,
 }
 
-const COLUMNS: &str = "id, user_id, name, token_prefix, created_at, expires_at, last_used_at";
+const COLUMNS: &str =
+    "id, user_id, name, token_prefix, scope, created_at, expires_at, last_used_at";
 
 pub async fn list_for_user(pool: &SqlitePool, user_id: i64) -> sqlx::Result<Vec<ApiToken>> {
     sqlx::query_as::<_, ApiToken>(&format!(
@@ -38,17 +43,20 @@ pub async fn insert(
     name: &str,
     token_hash: &str,
     token_prefix: &str,
+    scope: &str,
     expires_at: Option<&str>,
 ) -> sqlx::Result<i64> {
     let now = Utc::now().to_rfc3339();
     let row = sqlx::query(
-        "INSERT INTO api_tokens (user_id, name, token_hash, token_prefix, created_at, expires_at) \
-         VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO api_tokens \
+            (user_id, name, token_hash, token_prefix, scope, created_at, expires_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(user_id)
     .bind(name)
     .bind(token_hash)
     .bind(token_prefix)
+    .bind(scope)
     .bind(&now)
     .bind(expires_at)
     .execute(pool)
@@ -82,13 +90,14 @@ pub async fn lookup_by_hash(pool: &SqlitePool, token_hash: &str) -> sqlx::Result
         user_id: i64,
         email: String,
         is_admin: bool,
+        scope: String,
         expires_at: Option<String>,
         last_used_at: Option<String>,
     }
 
     let row: Option<TokenAuthRow> = sqlx::query_as(
         "SELECT api_tokens.id AS token_id, users.id AS user_id, users.email, users.is_admin, \
-                api_tokens.expires_at, api_tokens.last_used_at \
+                api_tokens.scope, api_tokens.expires_at, api_tokens.last_used_at \
          FROM api_tokens \
          JOIN users ON users.id = api_tokens.user_id \
          WHERE api_tokens.token_hash = ?",
@@ -102,6 +111,7 @@ pub async fn lookup_by_hash(pool: &SqlitePool, token_hash: &str) -> sqlx::Result
         user_id,
         email,
         is_admin,
+        scope,
         expires_at,
         last_used_at,
     }) = row
@@ -139,5 +149,6 @@ pub async fn lookup_by_hash(pool: &SqlitePool, token_hash: &str) -> sqlx::Result
         id: user_id,
         email,
         is_admin,
+        read_only: scope == SCOPE_READ,
     }))
 }

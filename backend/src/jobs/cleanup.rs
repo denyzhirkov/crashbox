@@ -81,6 +81,12 @@ pub async fn run_once(pool: &SqlitePool, retention: &Retention) -> sqlx::Result<
     .execute(pool)
     .await?;
 
+    // Heartbeat transition history follows the same retention window as events.
+    sqlx::query("DELETE FROM heartbeat_transitions WHERE at < ?")
+        .bind(&cutoff_iso)
+        .execute(pool)
+        .await?;
+
     let deleted = res.rows_affected();
     if deleted > 0 {
         metrics::counter!("crashbox_retention_events_deleted_total").increment(deleted);

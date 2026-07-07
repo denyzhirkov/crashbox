@@ -46,9 +46,16 @@ pub struct IssueFilters {
     /// Each entry is a `(key, value)` pair from `?tag=key=value`. Multiple tags are ANDed:
     /// an issue must have *some* event matching every requested (key, value).
     pub tags: Vec<(String, String)>,
+    /// Validated at the HTTP layer; anything outside the whitelist falls back to `last_seen`.
+    pub sort: Option<String>,
+    /// "asc" flips the direction; anything else means DESC.
+    pub order: Option<String>,
     pub limit: i64,
     pub offset: i64,
 }
+
+/// Sortable columns, whitelisted — sort input is pushed as a SQL identifier, never bound.
+pub const SORT_COLUMNS: [&str; 3] = ["last_seen", "first_seen", "event_count"];
 
 pub async fn find_by_id(pool: &SqlitePool, id: i64) -> sqlx::Result<Option<Issue>> {
     sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
@@ -62,8 +69,38 @@ pub async fn list(
     project_id: i64,
     f: &IssueFilters,
 ) -> sqlx::Result<Vec<Issue>> {
-    let now_iso = Utc::now().to_rfc3339();
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("SELECT DISTINCT issues.* FROM issues ");
+    push_filters(&mut qb, project_id, f);
+
+    let sort = match f.sort.as_deref() {
+        Some(s) if SORT_COLUMNS.contains(&s) => s,
+        _ => "last_seen",
+    };
+    let dir = if f.order.as_deref() == Some("asc") {
+        "ASC"
+    } else {
+        "DESC"
+    };
+    qb.push(format!(" ORDER BY issues.{sort} {dir} LIMIT "));
+    qb.push_bind(f.limit.clamp(1, 500));
+    qb.push(" OFFSET ");
+    qb.push_bind(f.offset.max(0));
+
+    qb.build_query_as::<Issue>().fetch_all(pool).await
+}
+
+/// Total matches for the same filter set `list` uses — pagination metadata for the API.
+pub async fn count(pool: &SqlitePool, project_id: i64, f: &IssueFilters) -> sqlx::Result<i64> {
+    let mut qb: QueryBuilder<Sqlite> =
+        QueryBuilder::new("SELECT COUNT(DISTINCT issues.id) FROM issues ");
+    push_filters(&mut qb, project_id, f);
+    let (n,): (i64,) = qb.build_query_as().fetch_one(pool).await?;
+    Ok(n)
+}
+
+/// Shared WHERE clause for `list` / `count` so the two can never drift apart.
+fn push_filters(qb: &mut QueryBuilder<'_, Sqlite>, project_id: i64, f: &IssueFilters) {
+    let now_iso = Utc::now().to_rfc3339();
     let needs_event_join = f.environment.is_some() || f.release.is_some();
     if needs_event_join {
         qb.push("JOIN events ON events.issue_id = issues.id ");
@@ -131,12 +168,6 @@ pub async fn list(
         qb.push_bind(v.clone());
         qb.push(")");
     }
-    qb.push(" ORDER BY issues.last_seen DESC LIMIT ");
-    qb.push_bind(f.limit.clamp(1, 500));
-    qb.push(" OFFSET ");
-    qb.push_bind(f.offset.max(0));
-
-    qb.build_query_as::<Issue>().fetch_all(pool).await
 }
 
 /// Wrap a batch of `Issue` rows with a 24h sparkline each. Single SQL query for the whole
@@ -294,6 +325,23 @@ pub async fn upsert(
     .execute(&mut *conn)
     .await?;
     Ok((row.last_insert_rowid(), UpsertOutcome::Created))
+}
+
+/// Hard-delete an issue and all of its events. `events.issue_id` is `ON DELETE SET NULL`,
+/// so the events must go explicitly (tags/breadcrumbs then cascade off the events) — leaving
+/// them orphaned would keep dead payloads alive until retention.
+pub async fn delete(pool: &SqlitePool, id: i64) -> sqlx::Result<u64> {
+    let mut tx = crate::db::begin_write(pool).await?;
+    sqlx::query("DELETE FROM events WHERE issue_id = ?")
+        .bind(id)
+        .execute(tx.acquire())
+        .await?;
+    let result = sqlx::query("DELETE FROM issues WHERE id = ?")
+        .bind(id)
+        .execute(tx.acquire())
+        .await?;
+    tx.commit().await?;
+    Ok(result.rows_affected())
 }
 
 /// After the event row is inserted, update the issue's counters and pointers.

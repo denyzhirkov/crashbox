@@ -11,7 +11,7 @@
 //! `last_ping_at` can't trigger an instant down-alert on the next sweep tick.
 
 use chrono::Utc;
-use sqlx::SqlitePool;
+use sqlx::{SqliteConnection, SqlitePool};
 
 pub const STATUS_PENDING: &str = "pending";
 pub const STATUS_UP: &str = "up";
@@ -36,6 +36,64 @@ pub struct HeartbeatMonitor {
     pub last_transition_at: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// One status flip, kept as history (`GET /api/heartbeats/:id/history`). Written wherever a
+/// transition happens — ping recovery, manual pause/resume, the sweep job — and pruned by the
+/// retention job.
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
+pub struct HeartbeatTransition {
+    pub id: i64,
+    pub monitor_id: i64,
+    pub from_status: String,
+    pub to_status: String,
+    pub at: String,
+}
+
+pub async fn record_transition(
+    conn: &mut SqliteConnection,
+    monitor_id: i64,
+    from_status: &str,
+    to_status: &str,
+    at: &str,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO heartbeat_transitions (monitor_id, from_status, to_status, at) \
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind(monitor_id)
+    .bind(from_status)
+    .bind(to_status)
+    .bind(at)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn list_transitions(
+    pool: &SqlitePool,
+    monitor_id: i64,
+    limit: i64,
+    offset: i64,
+) -> sqlx::Result<Vec<HeartbeatTransition>> {
+    sqlx::query_as::<_, HeartbeatTransition>(
+        "SELECT id, monitor_id, from_status, to_status, at FROM heartbeat_transitions \
+         WHERE monitor_id = ? ORDER BY at DESC, id DESC LIMIT ? OFFSET ?",
+    )
+    .bind(monitor_id)
+    .bind(limit.clamp(1, 500))
+    .bind(offset.max(0))
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn count_transitions(pool: &SqlitePool, monitor_id: i64) -> sqlx::Result<i64> {
+    let (n,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM heartbeat_transitions WHERE monitor_id = ?")
+            .bind(monitor_id)
+            .fetch_one(pool)
+            .await?;
+    Ok(n)
 }
 
 /// Result of a recorded ping. `was_down` drives the recovery notification.
@@ -144,22 +202,36 @@ pub async fn update(
 }
 
 /// Set `status` by hand (pause/resume). No-op when the monitor is already in that status, so
-/// repeated PATCHes don't churn `last_transition_at`.
+/// repeated PATCHes don't churn `last_transition_at` or spam the transition history.
 pub async fn set_status(pool: &SqlitePool, id: i64, status: &str) -> sqlx::Result<u64> {
+    let mut tx = crate::db::begin_write(pool).await?;
+    let current: Option<(String,)> =
+        sqlx::query_as("SELECT status FROM heartbeat_monitors WHERE id = ?")
+            .bind(id)
+            .fetch_optional(tx.acquire())
+            .await?;
+    let Some((from_status,)) = current else {
+        return Ok(0);
+    };
+    if from_status == status {
+        return Ok(0);
+    }
+
     let now = Utc::now().to_rfc3339();
-    let result = sqlx::query(
+    sqlx::query(
         "UPDATE heartbeat_monitors \
          SET status = ?, last_transition_at = ?, updated_at = ? \
-         WHERE id = ? AND status != ?",
+         WHERE id = ?",
     )
     .bind(status)
     .bind(&now)
     .bind(&now)
     .bind(id)
-    .bind(status)
-    .execute(pool)
+    .execute(tx.acquire())
     .await?;
-    Ok(result.rows_affected())
+    record_transition(tx.acquire(), id, &from_status, status, &now).await?;
+    tx.commit().await?;
+    Ok(1)
 }
 
 pub async fn delete(pool: &SqlitePool, id: i64) -> sqlx::Result<u64> {
@@ -209,6 +281,7 @@ pub async fn record_ping(pool: &SqlitePool, id: i64) -> sqlx::Result<Option<Ping
         .bind(m.id)
         .execute(tx.acquire())
         .await?;
+        record_transition(tx.acquire(), m.id, &m.status, STATUS_UP, &now).await?;
     } else {
         sqlx::query("UPDATE heartbeat_monitors SET last_ping_at = ?, updated_at = ? WHERE id = ?")
             .bind(&now)

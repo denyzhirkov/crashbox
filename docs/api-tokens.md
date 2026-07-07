@@ -16,9 +16,24 @@ Via API (session cookie required):
 ```bash
 curl -b cookies.txt -X POST https://crash.example.com/api/tokens \
   -H 'content-type: application/json' \
-  -d '{"name": "claude-code", "expires_in_days": 90}'   # expires_in_days optional
-# → 201 { "token": "cbx_…", "id": 3, "token_prefix": "cbx_a1b2c3", … }
+  -d '{"name": "claude-code", "expires_in_days": 90, "scope": "read"}'
+# → 201 { "token": "cbx_…", "id": 3, "token_prefix": "cbx_a1b2c3", "scope": "read", … }
 ```
+
+Both fields besides `name` are optional: `expires_in_days` defaults to never,
+`scope` defaults to `full`.
+
+## Scopes
+
+| Scope | Grants |
+|-------|--------|
+| `full` (default) | Everything the minting admin can do |
+| `read`           | GET/HEAD only — any write is refused with `403` and a self-explanatory error |
+
+`read` is the right default for agents that analyze rather than operate: an issue-triaging
+or report-writing agent can list projects, search events, and read heartbeat history, but a
+leaked token can't resolve issues, rotate DSN keys, or delete monitors. Scope enforcement
+happens at the single authentication point, before any handler runs.
 
 ## Using a token
 
@@ -54,10 +69,11 @@ revoke anything that stopped being used.
   (prefix only).
 - **Tokens cannot manage tokens.** `/api/tokens` endpoints accept a session cookie *only* —
   a leaked token can't mint itself successors or revoke other tokens.
-- **Full admin scope, deliberately.** There are no per-token scopes or roles — Crashbox is
-  a single-admin instance and scoped tokens would be RBAC through the back door (out of
-  scope by product guardrails). Treat a token like your password: prefer an expiry for
-  hand-offs, revoke after use.
+- **Two scopes, nothing finer.** `full` mirrors the minting admin; `read` is GET/HEAD-only.
+  There are no per-project or per-resource scopes — Crashbox is a single-admin instance and
+  anything finer would be RBAC through the back door (out of scope by product guardrails).
+  Treat a `full` token like your password: prefer an expiry for hand-offs, revoke after use;
+  prefer `read` whenever the automation only needs to look.
 - **Expiry** is optional (`expires_in_days`, 1–3650). Expired tokens get the same uniform
   `401` as unknown ones.
 - Ingestion endpoints (`/api/:id/envelope`, `/ping/:key`, `/api/:id/logs`) are unrelated to

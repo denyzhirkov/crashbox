@@ -90,6 +90,26 @@ impl LiveLogHub {
         Ok(Subscription { snapshot, rx })
     }
 
+    /// One-shot copy of the current scrollback, oldest first. Unlike `subscribe` it takes no
+    /// broadcast slot and doesn't count against `max_subscribers_per_project` — and it never
+    /// creates a channel for a project nobody has published to.
+    pub fn snapshot(&self, project_id: i64) -> Vec<Arc<LogRecord>> {
+        let channel = {
+            let map = self.projects.read().unwrap_or_else(PoisonError::into_inner);
+            map.get(&project_id).cloned()
+        };
+        match channel {
+            Some(c) => c
+                .ring
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .iter()
+                .cloned()
+                .collect(),
+            None => Vec::new(),
+        }
+    }
+
     fn channel(&self, project_id: i64) -> Arc<ProjectChannel> {
         if let Some(c) = self
             .projects

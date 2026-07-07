@@ -132,6 +132,21 @@ pub async fn run_once(
             continue;
         }
 
+        // Best-effort history row: losing one to a rare write error must not skip the alert.
+        if let Ok(mut conn) = pool.acquire().await {
+            if let Err(e) = crate::db::heartbeats::record_transition(
+                &mut conn,
+                m.id,
+                STATUS_UP,
+                STATUS_DOWN,
+                &now_iso,
+            )
+            .await
+            {
+                tracing::warn!(monitor_id = m.id, error = %e, "heartbeat: transition history write failed");
+            }
+        }
+
         metrics::counter!("crashbox_heartbeat_transitions_total", "to" => "down").increment(1);
         let overdue = (now - deadline).num_seconds();
         tracing::info!(

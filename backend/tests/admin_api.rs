@@ -208,7 +208,7 @@ async fn issues_list_includes_24h_sparkline_buckets() {
             .unwrap();
     }
 
-    let issues: Vec<serde_json::Value> = c
+    let page: serde_json::Value = c
         .get(format!("http://{addr}/api/projects/1/issues"))
         .send()
         .await
@@ -216,7 +216,9 @@ async fn issues_list_includes_24h_sparkline_buckets() {
         .json()
         .await
         .unwrap();
+    let issues = page["items"].as_array().unwrap();
     assert_eq!(issues.len(), 1);
+    assert_eq!(page["total"], 1);
     let buckets = issues[0]["last_24h_buckets"]
         .as_array()
         .expect("sparkline array");
@@ -284,7 +286,7 @@ async fn issues_filter_and_resolve_flow() {
         .unwrap();
 
     // List issues → 2 unresolved, one with event_count=2.
-    let issues: Vec<Value> = c
+    let page: Value = c
         .get(format!("http://{addr}/api/projects/1/issues"))
         .send()
         .await
@@ -292,7 +294,9 @@ async fn issues_filter_and_resolve_flow() {
         .json()
         .await
         .unwrap();
+    let issues = page["items"].as_array().unwrap();
     assert_eq!(issues.len(), 2);
+    assert_eq!(page["total"], 2);
     let tt = issues
         .iter()
         .find(|i| i["title"].as_str().unwrap().starts_with("TypeError"))
@@ -300,7 +304,7 @@ async fn issues_filter_and_resolve_flow() {
     assert_eq!(tt["event_count"], 2);
 
     // Text query filter narrows down.
-    let only_range: Vec<Value> = c
+    let only_range: Value = c
         .get(format!(
             "http://{addr}/api/projects/1/issues?query=RangeError"
         ))
@@ -310,7 +314,8 @@ async fn issues_filter_and_resolve_flow() {
         .json()
         .await
         .unwrap();
-    assert_eq!(only_range.len(), 1);
+    assert_eq!(only_range["items"].as_array().unwrap().len(), 1);
+    assert_eq!(only_range["total"], 1);
 
     // Resolve the TypeError issue.
     let issue_id = tt["id"].as_i64().unwrap();
@@ -326,7 +331,7 @@ async fn issues_filter_and_resolve_flow() {
     assert_eq!(resolved["status"], "resolved");
 
     // status=unresolved (default) now shows only RangeError.
-    let unresolved_list: Vec<Value> = c
+    let unresolved_page: Value = c
         .get(format!(
             "http://{addr}/api/projects/1/issues?status=unresolved"
         ))
@@ -336,6 +341,7 @@ async fn issues_filter_and_resolve_flow() {
         .json()
         .await
         .unwrap();
+    let unresolved_list = unresolved_page["items"].as_array().unwrap();
     assert_eq!(unresolved_list.len(), 1);
     assert!(unresolved_list[0]["title"]
         .as_str()
@@ -343,7 +349,7 @@ async fn issues_filter_and_resolve_flow() {
         .contains("RangeError"));
 
     // Event detail includes parsed raw payload.
-    let events: Vec<Value> = c
+    let events_page: Value = c
         .get(format!("http://{addr}/api/issues/{issue_id}/events"))
         .send()
         .await
@@ -351,7 +357,8 @@ async fn issues_filter_and_resolve_flow() {
         .json()
         .await
         .unwrap();
-    let event_row_id = events[0]["id"].as_i64().unwrap();
+    assert_eq!(events_page["total"], 2);
+    let event_row_id = events_page["items"][0]["id"].as_i64().unwrap();
     let event: Value = c
         .get(format!("http://{addr}/api/events/{event_row_id}"))
         .send()

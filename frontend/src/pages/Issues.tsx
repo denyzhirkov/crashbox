@@ -64,7 +64,7 @@ export default function IssuesPage() {
   const [issues] = createResource(
     () => ({ pid: projectId(), p: parsed(), s: status(), t: tags() }),
     ({ pid, p, s, t }) =>
-      api.issues.list(pid, { status: s, query: p.freeText || undefined, ...p.filters }, t),
+      api.issues.list(pid, { status: s, query: p.freeText || undefined, ...p.filters }, t).then((page) => page.items),
   )
 
   // Saved views (localStorage).

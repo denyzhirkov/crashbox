@@ -88,7 +88,7 @@ async fn tag_filter_narrows_results() {
     ingest(addr, "C", json!({"env": "staging"})).await;
 
     // No filter → all 3
-    let all: Vec<Value> = c
+    let all: Value = c
         .get(format!("http://{addr}/api/projects/1/issues?status=all"))
         .send()
         .await
@@ -96,10 +96,11 @@ async fn tag_filter_narrows_results() {
         .json()
         .await
         .unwrap();
-    assert_eq!(all.len(), 3);
+    assert_eq!(all["items"].as_array().unwrap().len(), 3);
+    assert_eq!(all["total"], 3);
 
     // tag=env=production → 2 (A and B)
-    let prod: Vec<Value> = c
+    let prod: Value = c
         .get(format!(
             "http://{addr}/api/projects/1/issues?status=all&tag=env=production"
         ))
@@ -109,10 +110,11 @@ async fn tag_filter_narrows_results() {
         .json()
         .await
         .unwrap();
-    assert_eq!(prod.len(), 2);
+    assert_eq!(prod["items"].as_array().unwrap().len(), 2);
+    assert_eq!(prod["total"], 2);
 
     // tag=env=production AND tag=shard=us-east → 1 (A only)
-    let east: Vec<Value> = c
+    let east: Value = c
         .get(format!(
             "http://{addr}/api/projects/1/issues?status=all&tag=env=production&tag=shard=us-east"
         ))
@@ -122,6 +124,7 @@ async fn tag_filter_narrows_results() {
         .json()
         .await
         .unwrap();
+    let east = east["items"].as_array().unwrap();
     assert_eq!(east.len(), 1);
     assert!(east[0]["title"].as_str().unwrap().starts_with("A:"));
 }

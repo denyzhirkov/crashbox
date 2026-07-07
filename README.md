@@ -71,6 +71,7 @@ Crashbox is one ~40 MB Docker image, one SQLite file, no background services bey
 
 See `docs/` for the details:
 
+- [`docs/api.md`](docs/api.md) — the complete admin HTTP API (humans and agents alike)
 - [`docs/protocol.md`](docs/protocol.md) — the exact Sentry ingest subset we accept
 - [`docs/configuration.md`](docs/configuration.md) — every `CRASHBOX_*` env var
 - [`docs/logs.md`](docs/logs.md) — Live Logs protocol, streaming, and limitations
