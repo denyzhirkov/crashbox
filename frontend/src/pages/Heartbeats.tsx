@@ -1,5 +1,5 @@
 import { useParams } from '@solidjs/router'
-import { createMemo, createResource, createSignal, For, onCleanup, Show } from 'solid-js'
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from 'solid-js'
 import { api } from '../api/client'
 import type { HeartbeatMonitor, HeartbeatStatus } from '../api/types'
 import { Breadcrumb, Page, ProjectNav } from '../components/layout'
@@ -218,24 +218,13 @@ function MonitorRow(props: {
         {/* whisper edge cue — same muted 3px severity bar as everywhere else */}
         <SevCue level={SEV[m().status]} variant="bar" style={{ height: '20px', 'align-self': 'center' }} />
 
-        <div style={{ width: '210px', flex: 'none', display: 'flex', 'flex-direction': 'column', gap: '2px' }}>
-          <span
-            class="mono"
-            style={{ 'font-size': '13.5px', 'font-weight': 500, color: 'var(--text-hi)', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}
-            title={m().name}
-          >
-            {m().name}
-          </span>
-          <Show when={m().description}>
-            <span
-              class="mono"
-              style={{ 'font-size': '11px', color: 'var(--text-faint)', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}
-              title={m().description ?? undefined}
-            >
-              {m().description}
-            </span>
-          </Show>
-        </div>
+        <span
+          class="mono"
+          style={{ width: '210px', flex: 'none', 'font-size': '13.5px', 'font-weight': 500, color: 'var(--text-hi)', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}
+          title={m().name}
+        >
+          {m().name}
+        </span>
 
         <CadenceLane
           status={m().status}
@@ -262,20 +251,86 @@ function MonitorRow(props: {
             <Icon name="copy" size={12} />
           </button>
           <Show when={props.isAdmin}>
-            <button class="btn ghost sm" onClick={paused() ? props.onResume : props.onPause} title={paused() ? 'resume (waits for the next ping)' : 'pause (stops alerting)'}>
-              <Icon name={paused() ? 'enter' : 'snooze'} size={12} />
-            </button>
-            <button class="btn ghost sm" onClick={props.onEdit}>edit</button>
-            <button class="btn ghost sm" onClick={props.onDelete} title="delete — invalidates the ping URL">
-              <Icon name="x" size={12} />
-            </button>
+            <RowMenu
+              items={[
+                paused()
+                  ? { label: 'resume', title: 'waits for the next ping', onClick: props.onResume }
+                  : { label: 'pause', title: 'stops alerting', onClick: props.onPause },
+                { label: 'edit', onClick: props.onEdit },
+                { label: 'delete', title: 'invalidates the ping URL', danger: true, onClick: props.onDelete },
+              ]}
+            />
           </Show>
         </div>
       </div>
 
+      <Show when={m().description}>
+        <div
+          class="mono"
+          style={{ padding: '0 16px 12px 31px', 'margin-top': '-6px', 'font-size': '11px', 'line-height': '1.5', color: 'var(--text-faint)' }}
+        >
+          {m().description}
+        </div>
+      </Show>
+
       <Show when={showUrl()}>
         <div style={{ padding: '0 16px 14px 31px' }}>
           <CopyBlock value={m().ping_url} />
+        </div>
+      </Show>
+    </div>
+  )
+}
+
+/** Kebab (⋯) button with a micro popup listing row actions. Closes on outside click / Escape. */
+function RowMenu(props: {
+  items: Array<{ label: string; title?: string; danger?: boolean; onClick: () => void }>
+}) {
+  const [open, setOpen] = createSignal(false)
+  let root: HTMLDivElement | undefined
+  createEffect(() => {
+    if (!open()) return
+    const onClick = (e: MouseEvent) => {
+      if (!root?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', onClick)
+    document.addEventListener('keydown', onKey)
+    onCleanup(() => {
+      document.removeEventListener('mousedown', onClick)
+      document.removeEventListener('keydown', onKey)
+    })
+  })
+  return (
+    <div ref={root} style={{ position: 'relative', flex: 'none' }}>
+      <button
+        class="btn ghost sm"
+        style={open() ? { background: 'oklch(1 0 0 / 0.07)', color: 'var(--text-hi)' } : undefined}
+        onClick={() => setOpen((v) => !v)}
+        title="actions"
+      >
+        <Icon name="dots" size={13} />
+      </button>
+      <Show when={open()}>
+        <div
+          class="card"
+          style={{ position: 'absolute', top: '32px', right: 0, 'min-width': '148px', padding: '5px', 'z-index': 50, background: 'var(--bg-float)', 'box-shadow': 'var(--shadow-pop)' }}
+        >
+          <For each={props.items}>
+            {(it) => (
+              <button
+                class="cb-menuitem"
+                title={it.title}
+                onClick={() => {
+                  setOpen(false)
+                  it.onClick()
+                }}
+                style={{ display: 'block', width: '100%', 'text-align': 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '8px 10px', 'border-radius': '6px', color: it.danger ? 'var(--sev-error)' : 'var(--text)' }}
+              >
+                <span class="mono" style={{ 'font-size': '12.5px' }}>{it.label}</span>
+              </button>
+            )}
+          </For>
         </div>
       </Show>
     </div>

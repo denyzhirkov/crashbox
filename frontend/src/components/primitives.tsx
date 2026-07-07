@@ -46,6 +46,13 @@ const ICONS: Record<string, () => JSX.Element> = {
   ),
   pulse: () => <path d="M1 8h3l2-5 3 10 2-5h4" />,
   dot: () => <circle cx="8" cy="8" r="2.4" />,
+  dots: () => (
+    <>
+      <circle cx="3.2" cy="8" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="12.8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+    </>
+  ),
   ext: () => <path d="M6 4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2M9 3h4v4M13 3 7 9" />,
   cmd: () => <path d="M5.5 4.5A1.5 1.5 0 1 1 7 6v4a1.5 1.5 0 1 1-1.5-1.5h5A1.5 1.5 0 1 1 9 10V6a1.5 1.5 0 1 1 1.5 1.5h-5z" />,
 }
