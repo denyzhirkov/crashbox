@@ -4,7 +4,9 @@ use axum::Router;
 use tower_http::trace::TraceLayer;
 
 use crate::app_state::AppState;
-use crate::http::{assets, auth, health, heartbeats, ingest, issues, livelog, projects, tokens};
+use crate::http::{
+    assets, auth, backup, health, heartbeats, ingest, issues, livelog, projects, tokens,
+};
 use crate::metrics_layer;
 
 pub fn build(state: AppState) -> Router {
@@ -12,13 +14,20 @@ pub fn build(state: AppState) -> Router {
     let log_batch_limit = state.config.livelog.max_batch_bytes;
     let live_logs_enabled = state.config.livelog.enabled;
 
-    let ingest_router = Router::new()
+    let mut ingest_router = Router::new()
         .route("/api/:project_id/envelope", post(ingest::envelope_endpoint))
         .route(
             "/api/:project_id/envelope/",
             post(ingest::envelope_endpoint),
-        )
-        .layer(DefaultBodyLimit::max(envelope_limit));
+        );
+    // Mounted only when opted in — absent routes fall through to the SPA fallback,
+    // mirroring how the live-logs routes behave when disabled.
+    if state.config.ingest.enable_legacy_store_endpoint {
+        ingest_router = ingest_router
+            .route("/api/:project_id/store", post(ingest::store_endpoint))
+            .route("/api/:project_id/store/", post(ingest::store_endpoint));
+    }
+    let ingest_router = ingest_router.layer(DefaultBodyLimit::max(envelope_limit));
 
     // Heartbeat pings are public (authenticated by the unguessable key alone). GET is
     // supported so a bare `curl <url>` at the end of a cron line works.
@@ -36,6 +45,7 @@ pub fn build(state: AppState) -> Router {
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/auth/me", get(auth::me))
+        .route("/api/admin/backup", get(backup::download))
         .route("/api/tokens", get(tokens::list).post(tokens::create))
         .route("/api/tokens/:id", delete(tokens::remove))
         .route("/api/projects", get(projects::list).post(projects::create))

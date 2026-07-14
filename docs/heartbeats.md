@@ -90,6 +90,30 @@ pings and the sweep. Bounds: `period_seconds` 10 s … 30 d, `grace_seconds` 0 �
 breaks if this stops". On PATCH it is three-state: omit the field to keep the note, send a
 blank string to clear it, send text to replace it.
 
+## Declarative provisioning (env)
+
+For IaC-style deployments, monitors can be provisioned at startup instead of through the UI:
+
+```bash
+CRASHBOX_HEARTBEAT_MONITORS='[
+  {"name":"db-backup","ping_key":"k7f3xxxxxxxxxxxxxxxxxxxxxx","period_seconds":86400,"grace_seconds":3600,"description":"nightly pg_dump"},
+  {"name":"queue-worker","ping_key":"q9m1xxxxxxxxxxxxxxxxxxxxxx","period_seconds":60}
+]'
+```
+
+Applied idempotently on every startup, against the lowest-id (default) project:
+
+- `name` is the identity: no monitor with that name → created; exists → converged.
+- The operator supplies the `ping_key` (16–128 chars of `[A-Za-z0-9_-]`), so ping URLs
+  survive container recreation. It is the only authentication on the URL — generate it like
+  a secret (`openssl rand -hex 16`). Declaring a new key rotates it.
+- Env wins for what it declares: `ping_key` and `period_seconds` always, `grace_seconds` and
+  `description` only when present in the entry — otherwise UI edits survive restarts.
+- Monitors *not* listed in the env are never touched or deleted, and provisioning never
+  changes `status` or transition history.
+- A malformed entry (bad JSON, short key, out-of-bounds period, duplicate name/key) fails
+  startup loud — a silently-skipped monitor is a dead-man's switch that never arms.
+
 ## Metrics
 
 - `crashbox_heartbeat_pings_total` — accepted pings

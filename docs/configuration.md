@@ -45,12 +45,12 @@ The DSN is logged once at startup using `INFO` level. Subsequent logs mask the p
 
 | Variable | Default | Notes |
 |---|---|---|
-| `CRASHBOX_MAX_ENVELOPE_BYTES` | `1048576` (1 MiB) | Body size cap; enforced via tower-http `DefaultBodyLimit` before parsing. |
+| `CRASHBOX_MAX_ENVELOPE_BYTES` | `1048576` (1 MiB) | Body size cap; enforced via tower-http `DefaultBodyLimit` before parsing. Also caps the **decompressed** size of compressed bodies (`Content-Encoding: gzip`/`deflate`/`zstd`). |
 | `CRASHBOX_MAX_EVENT_BYTES` | `524288` (512 KiB) | Per-item event payload cap. |
 | `CRASHBOX_MAX_EVENTS_PER_MINUTE_PER_PROJECT` | `600` | In-memory token bucket per project (10/sec). Exceeded → `429` with `Retry-After: 1`. |
 | `CRASHBOX_ACCEPT_UNKNOWN_ITEM_TYPES` | `false` | Reserved for future raw-item store. |
 | `CRASHBOX_STORE_RAW_UNSUPPORTED_ITEMS` | `false` | Reserved. |
-| `CRASHBOX_ENABLE_LEGACY_STORE_ENDPOINT` | `false` | Reserved; `/api/:project_id/store/` not in MVP. |
+| `CRASHBOX_ENABLE_LEGACY_STORE_ENDPOINT` | `false` | Mounts `POST /api/:project_id/store[/]` — the pre-envelope Sentry API (bare event JSON) for older SDKs and hand-rolled clients. See `docs/protocol.md` § Legacy store API. |
 
 ## Live Logs
 
@@ -97,6 +97,7 @@ Dead-man's switch monitors: a cron job or service is expected to hit its ping UR
 |---|---|---|
 | `CRASHBOX_HEARTBEAT_SWEEP_INTERVAL_SECONDS` | `30` | How often the sweep looks for overdue monitors. `0` disables the sweep job (pings are still recorded, but nothing flips to `down`). |
 | `CRASHBOX_HEARTBEAT_MAX_PINGS_PER_MINUTE` | `120` | Per-monitor cap on accepted pings; excess pings get `429` with `Retry-After`. |
+| `CRASHBOX_HEARTBEAT_MONITORS` | *(unset)* | Declarative monitor provisioning: a JSON array applied idempotently at startup, e.g. `[{"name":"db-backup","ping_key":"<16-128 chars of [A-Za-z0-9_-]>","period_seconds":86400,"grace_seconds":3600,"description":"optional"}]`. `name` is the identity (within the lowest-id project); `ping_key` and `period_seconds` always converge to the declared values, `grace_seconds`/`description` only when declared. Undeclared monitors are never touched or deleted; status is never altered. Malformed value = startup failure. Treat `ping_key` like a secret — it is the only authentication on the ping URL. See `docs/heartbeats.md`. |
 
 ## UI
 
@@ -124,6 +125,8 @@ Dead-man's switch monitors: a cron job or service is expected to hit its ping UR
 | `CRASHBOX_DISCORD_WEBHOOK_URL` | _(unset)_ | Full webhook URL from Discord's channel settings. |
 | `CRASHBOX_GENERIC_WEBHOOK_URL` | _(unset)_ | Any URL — receives a POST with the full `Notification` payload as JSON. Useful for piping into Slack via webhook, PagerDuty, or your own relay. |
 | `CRASHBOX_NOTIFY_MAX_PER_MINUTE` | `30` | Per-notifier token-bucket cap. Excess notifications are **dropped** (logged at INFO), not queued. Keeps a sudden burst of new issues from spamming the channel. |
+| `CRASHBOX_DIGEST_ENABLED` | `false` | Periodic per-project summary (`kind: "digest"`) through the configured channels: new issues, events, and the top-3 busiest issues since the last digest. Projects with no activity are skipped. |
+| `CRASHBOX_DIGEST_INTERVAL_HOURS` | `24` | Digest cadence. The window anchor persists in the DB, so restarts neither double-send nor reset the window; after downtime one digest covers the longer window. Must be ≥ 1 when enabled. |
 
 **Triggers.** Notifications fire on issue-level transitions only:
 

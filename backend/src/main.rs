@@ -53,8 +53,14 @@ async fn main() -> anyhow::Result<()> {
         cancel.clone(),
     );
     jobs::heartbeat::spawn(
-        pool,
+        pool.clone(),
         Arc::new(cfg.heartbeat.clone()),
+        state.notify.clone(),
+        cancel.clone(),
+    );
+    jobs::digest::spawn(
+        pool,
+        Arc::new(cfg.digest.clone()),
         state.notify.clone(),
         cancel.clone(),
     );

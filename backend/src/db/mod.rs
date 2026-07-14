@@ -1,6 +1,7 @@
 pub mod events;
 pub mod heartbeats;
 pub mod issues;
+pub mod meta;
 pub mod projects;
 pub mod tokens;
 pub mod users;
@@ -91,6 +92,36 @@ impl Drop for WriteTx {
 
 pub async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(pool).await?;
+    Ok(())
+}
+
+/// Filesystem path of the SQLite database file behind a `sqlite://` URL.
+pub fn database_file_path(database_url: &str) -> std::path::PathBuf {
+    let raw = database_url
+        .strip_prefix("sqlite://")
+        .or_else(|| database_url.strip_prefix("sqlite:"))
+        .unwrap_or(database_url);
+    std::path::PathBuf::from(raw)
+}
+
+/// Atomic online snapshot of the live database via `VACUUM INTO`.
+///
+/// Bound parameters aren't allowed inside VACUUM, so the path is embedded in the SQL; paths
+/// containing single quotes are rejected rather than escaped (exotic, and mis-escaping would
+/// mean SQL injection into a DDL statement).
+pub async fn vacuum_into(pool: &SqlitePool, dest: &Path) -> anyhow::Result<()> {
+    let Some(path_str) = dest.to_str() else {
+        anyhow::bail!("backup path is not valid UTF-8");
+    };
+    if path_str.contains('\'') {
+        anyhow::bail!("backup path may not contain single quotes");
+    }
+    if dest.exists() {
+        anyhow::bail!("refusing to overwrite existing file: {}", dest.display());
+    }
+    sqlx::query(&format!("VACUUM INTO '{path_str}'"))
+        .execute(pool)
+        .await?;
     Ok(())
 }
 

@@ -14,7 +14,8 @@ what we do — and don't — accept.
 |---|---|---|---|
 | POST | `/api/:project_id/envelope` | SDK envelope upload | ✅ supported |
 | POST | `/api/:project_id/envelope/` | trailing-slash variant | ✅ supported |
-| POST | `/api/:project_id/store/` | legacy non-envelope endpoint | ❌ not in MVP |
+| POST | `/api/:project_id/store` | legacy non-envelope endpoint | ✅ opt-in via `CRASHBOX_ENABLE_LEGACY_STORE_ENDPOINT` |
+| POST | `/api/:project_id/store/` | trailing-slash variant | ✅ opt-in via `CRASHBOX_ENABLE_LEGACY_STORE_ENDPOINT` |
 | GET | `/metrics` | Prometheus scrape — see Metrics below | ✅ |
 | GET | `/healthz`, `/readyz` | liveness / readiness probes | ✅ |
 
@@ -30,6 +31,38 @@ The `sentry_key` value must equal the project's `public_key` and the project mus
 2. `?sentry_key=PUBLIC_KEY` query string
 
 Other `X-Sentry-Auth` fields (`sentry_version`, `sentry_client`, etc.) are accepted but ignored.
+
+### Compression
+
+Compressed request bodies are supported via the `Content-Encoding` header:
+
+| `Content-Encoding` | Behavior |
+|---|---|
+| *(absent)*, `identity` | Body used as-is |
+| `gzip`, `x-gzip` | Decompressed with gzip |
+| `deflate` | Decompressed as zlib-wrapped deflate (RFC 1950) — what Sentry SDKs send; raw deflate streams are rejected |
+| `zstd` | Decompressed with zstd |
+| anything else (incl. `br`, multi-encoding chains like `gzip, zstd`) | `400 bad request` |
+
+The **decompressed** size is bounded by the same `CRASHBOX_MAX_ENVELOPE_BYTES` limit as the raw
+body — a small compressed body cannot balloon past it (zip-bomb protection). Exceeding it returns
+`413`. Decompression happens only after DSN auth and rate limiting, so unauthenticated traffic
+never reaches the decompressor.
+
+### Rate limiting and SDK backoff
+
+Ingestion is rate-limited per project (`CRASHBOX_MAX_EVENTS_PER_MINUTE_PER_PROJECT`; the logs
+endpoint has its own budget, `CRASHBOX_MAX_LOGS_PER_MINUTE_PER_PROJECT`). A rejected request
+gets `429` with both headers SDKs understand, so official clients back off instead of
+hammering:
+
+```
+Retry-After: <seconds>
+X-Sentry-Rate-Limits: <seconds>:<category>:project
+```
+
+`category` is `error` for the envelope/store endpoints and `log_item` for the logs endpoint.
+The scope is always `project` — that's the granularity of our limiter.
 
 Failure modes:
 
@@ -70,7 +103,9 @@ envelope; if more arrive only the first is recorded. Future versions may relax t
 ### Failure modes
 
 - Body > `CRASHBOX_MAX_ENVELOPE_BYTES` → `413 payload too large`
+- Decompressed body > `CRASHBOX_MAX_ENVELOPE_BYTES` → `413 payload too large`
 - Event payload > `CRASHBOX_MAX_EVENT_BYTES` → `413 payload too large`
+- Unsupported `Content-Encoding` or corrupt compressed stream → `400 bad request`
 - Unparseable envelope header → `400 bad request`
 - Invalid JSON in an item header → `400 bad request` (with byte offset in the message)
 - Item header declares a `length` past end of buffer → `400 bad request`
@@ -78,6 +113,25 @@ envelope; if more arrive only the first is recorded. Future versions may relax t
 - Item payload is not valid JSON (for `type=event`) → `400 bad request`
 
 The server **never panics** on malformed envelopes — that's a hard invariant enforced by tests.
+
+---
+
+## Legacy store API
+
+`POST /api/:project_id/store[/]` accepts a **bare event JSON object** (no envelope framing) —
+the pre-envelope Sentry protocol still used by older SDKs and hand-rolled clients. **Off by
+default**; mount it with `CRASHBOX_ENABLE_LEGACY_STORE_ENDPOINT=true` (when disabled the path
+falls through to the SPA fallback, like other unmounted routes). Auth,
+rate limiting, compression (`Content-Encoding`), size limits, normalization, and grouping are
+identical to the envelope endpoint; the whole body is treated as one event payload.
+
+Response: `200 {"id": "<event_id>"}` (empty string when the event carries no `event_id`).
+
+Known limitations (documented, not bugs):
+
+- One event per request — there is no framing to carry more.
+- The raven-era "base64-encoded zlib body without `Content-Encoding`" variant is **not**
+  detected; send compressed bodies with an explicit `Content-Encoding` header.
 
 ---
 
@@ -192,7 +246,7 @@ Metric families exposed:
 | Name | Type | Labels | Description |
 |---|---|---|---|
 | `crashbox_events_ingested_total` | counter | `project`, `level` | Events accepted and stored |
-| `crashbox_events_dropped_total` | counter | `reason` (`bad_key` / `bad_envelope` / `too_large_envelope` / `rate_limit` / `db_error`) | Events rejected, by reason |
+| `crashbox_events_dropped_total` | counter | `reason` (`bad_key` / `bad_envelope` / `bad_encoding` / `too_large_envelope` / `rate_limit` / `db_error`) | Events rejected, by reason |
 | `crashbox_envelope_bytes_total` | counter | `project` | Total bytes of envelope bodies accepted (post auth) |
 | `crashbox_retention_events_deleted_total` | counter | — | Events deleted by the retention sweep |
 | `crashbox_db_pool_size` | gauge | — | SQLx pool current size (refreshed on scrape) |

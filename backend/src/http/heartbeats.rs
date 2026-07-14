@@ -13,19 +13,15 @@ use serde_json::json;
 use ulid::Ulid;
 
 use crate::app_state::AppState;
-use crate::db::heartbeats::{self, HeartbeatMonitor};
+use crate::db::heartbeats::{
+    self, HeartbeatMonitor, DESCRIPTION_MAX_CHARS, GRACE_DEFAULT_SECONDS, GRACE_MAX_SECONDS,
+    NAME_MAX_CHARS, PERIOD_MAX_SECONDS, PERIOD_MIN_SECONDS,
+};
 use crate::db::projects;
 use crate::http::error::{AppError, AppResult};
 use crate::http::Paginated;
 use crate::notify::{HeartbeatKind, HeartbeatNotification, Notification};
 use crate::security::sessions::AuthUser;
-
-const PERIOD_MIN_SECONDS: i64 = 10;
-const PERIOD_MAX_SECONDS: i64 = 30 * 24 * 3600;
-const GRACE_MAX_SECONDS: i64 = 24 * 3600;
-const GRACE_DEFAULT_SECONDS: i64 = 60;
-const NAME_MAX_CHARS: usize = 200;
-const DESCRIPTION_MAX_CHARS: usize = 500;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateMonitor {

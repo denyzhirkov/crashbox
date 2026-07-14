@@ -288,17 +288,7 @@ async fn run_users(action: UsersAction, pool: &sqlx::SqlitePool) -> anyhow::Resu
 }
 
 async fn run_backup(path: &str, pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
-    if std::path::Path::new(path).exists() {
-        anyhow::bail!("refusing to overwrite existing file: {path}");
-    }
-    // VACUUM INTO writes an atomic snapshot. Bound parameters aren't allowed inside VACUUM,
-    // so escape single quotes manually — paths with quotes are exotic and we error rather
-    // than guess.
-    if path.contains('\'') {
-        anyhow::bail!("path may not contain single quotes");
-    }
-    let sql = format!("VACUUM INTO '{path}'");
-    sqlx::query(&sql).execute(pool).await?;
+    db::vacuum_into(pool, std::path::Path::new(path)).await?;
     eprintln!("backup written to {path}");
     Ok(())
 }

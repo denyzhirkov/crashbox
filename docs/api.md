@@ -129,6 +129,21 @@ curl -H "$AUTH" 'https://crash.example.com/api/projects/1/events?q=checkout.js&l
 
 Logs are RAM-only — `recent` returns what the ring buffer holds right now, not history.
 
+## Admin
+
+| Method & path | Notes |
+|---------------|-------|
+| `GET /api/admin/backup` | Streams an atomic snapshot of the SQLite database (`VACUUM INTO`), `application/octet-stream` with a dated `crashbox-YYYYMMDD-HHMMSS.db` filename. Works with read-scope tokens (GET). One backup at a time — a concurrent request gets `409`. The temp snapshot is written next to the live DB and deleted after streaming. |
+
+Backup recipe with an API token:
+
+```bash
+curl -fsS -H "Authorization: Bearer cbx_…" -o crashbox-backup.db \
+  https://crash.example.com/api/admin/backup
+```
+
+(The same snapshot is available offline via the CLI: `docker exec crashbox crashbox backup /data/snap.db`.)
+
 ## Health & metrics (unauthenticated)
 
 | Method & path | Notes |

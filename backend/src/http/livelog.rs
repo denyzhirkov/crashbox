@@ -75,15 +75,11 @@ pub async fn logs_ingest(
 
     let decision = state.log_rate_limiter.check(project.id);
     if !decision.allowed {
-        let mut resp = (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(json!({"error": "log rate limit exceeded"})),
-        )
-            .into_response();
-        if let Ok(v) = decision.retry_after.to_string().parse() {
-            resp.headers_mut().insert("retry-after", v);
-        }
-        return resp;
+        return crate::http::ingest::rate_limited_response(
+            "log rate limit exceeded",
+            decision.retry_after,
+            "log_item",
+        );
     }
 
     let max_msg = state.config.livelog.message_max_bytes;

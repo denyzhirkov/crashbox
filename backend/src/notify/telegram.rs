@@ -29,19 +29,27 @@ impl TelegramNotifier {
 fn format_body(msg: &Notification) -> String {
     let mut parts = Vec::with_capacity(6);
     parts.push(msg.subject());
-    if let Notification::Issue(n) = msg {
-        parts.push(format!("count: {}", n.event_count));
-        if let Some(level) = &n.level {
-            parts.push(format!("level: {level}"));
+    match msg {
+        Notification::Issue(n) => {
+            parts.push(format!("count: {}", n.event_count));
+            if let Some(level) = &n.level {
+                parts.push(format!("level: {level}"));
+            }
+            if let Some(env) = &n.environment {
+                parts.push(format!("env:   {env}"));
+            }
+            if let Some(rel) = &n.release {
+                parts.push(format!("rel:   {rel}"));
+            }
         }
-        if let Some(env) = &n.environment {
-            parts.push(format!("env:   {env}"));
-        }
-        if let Some(rel) = &n.release {
-            parts.push(format!("rel:   {rel}"));
+        // Heartbeat subjects already carry the overdue/downtime detail; body is subject + link.
+        Notification::Heartbeat(_) => {}
+        Notification::Digest(n) => {
+            for top in &n.top_issues {
+                parts.push(format!("{}× {}", top.events, top.title));
+            }
         }
     }
-    // Heartbeat subjects already carry the overdue/downtime detail; body is subject + link.
     parts.push(msg.link().to_string());
     parts.join("\n")
 }

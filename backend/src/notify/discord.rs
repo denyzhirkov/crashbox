@@ -25,6 +25,7 @@ fn color(msg: &Notification) -> u32 {
             HeartbeatKind::HeartbeatDown => 0x_E3_40_2D,
             HeartbeatKind::HeartbeatRecovered => 0x_2E_CC_71, // green
         },
+        Notification::Digest(_) => 0x_3B_82_F6, // informational blue — a summary, not an alarm
     }
 }
 
@@ -54,6 +55,21 @@ fn fields(msg: &Notification) -> Vec<serde_json::Value> {
                 fields.push(
                     json!({"name": "downtime", "value": format!("{downtime}s"), "inline": true}),
                 );
+            }
+        }
+        Notification::Digest(n) => {
+            fields.push(
+                json!({"name": "new issues", "value": n.new_issues.to_string(), "inline": true}),
+            );
+            fields.push(json!({"name": "events", "value": n.events.to_string(), "inline": true}));
+            if !n.top_issues.is_empty() {
+                let top = n
+                    .top_issues
+                    .iter()
+                    .map(|t| format!("{}× {}", t.events, t.title))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                fields.push(json!({"name": "top issues", "value": top, "inline": false}));
             }
         }
     }

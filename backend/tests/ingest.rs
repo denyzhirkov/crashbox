@@ -318,3 +318,150 @@ async fn rejects_garbage_envelope() {
         .expect("send");
     assert_eq!(resp.status().as_u16(), 400);
 }
+
+#[tokio::test]
+async fn store_endpoint_is_absent_unless_opted_in() {
+    // This binary never sets CRASHBOX_ENABLE_LEGACY_STORE_ENDPOINT, so the route must not be
+    // mounted: the request falls through to the SPA fallback (HTML), not the store handler.
+    let (addr, _pool) = spawn_app().await;
+    let resp = reqwest::Client::new()
+        .post(format!("http://{addr}/api/1/store/"))
+        .header("x-sentry-auth", "Sentry sentry_key=testpublickey")
+        .body("{\"message\":\"x\"}")
+        .send()
+        .await
+        .expect("send");
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        content_type.starts_with("text/html"),
+        "expected SPA fallback, got {content_type}"
+    );
+}
+
+fn gzip(data: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    enc.write_all(data).expect("gzip write");
+    enc.finish().expect("gzip finish")
+}
+
+#[tokio::test]
+async fn accepts_gzip_compressed_envelope_from_real_sdk_fixture() {
+    let (addr, pool) = spawn_app().await;
+    // Real event captured from the Node SDK; compressed the way SDKs send it.
+    let payload = include_str!("fixtures/envelopes/sentry-node-typeerror.event.json");
+    let envelope = make_envelope("abcdef1234567890abcdef1234567890", payload.trim_end());
+
+    let resp = reqwest::Client::new()
+        .post(format!("http://{addr}/api/1/envelope/"))
+        .header("x-sentry-auth", "Sentry sentry_key=testpublickey")
+        .header("content-type", "application/x-sentry-envelope")
+        .header("content-encoding", "gzip")
+        .body(gzip(envelope.as_bytes()))
+        .send()
+        .await
+        .expect("send");
+    assert_eq!(resp.status().as_u16(), 200, "body: {:?}", resp.text().await);
+
+    let stored: (i64, String) = sqlx::query_as(
+        "SELECT COUNT(*), COALESCE(MAX(raw_json), '') FROM events WHERE project_id = 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fetch");
+    assert_eq!(stored.0, 1);
+    assert!(stored.1.contains("TypeError"));
+}
+
+#[tokio::test]
+async fn accepts_zstd_compressed_envelope() {
+    let (addr, pool) = spawn_app().await;
+    let payload = "{\"message\":\"zstd hello\",\"platform\":\"node\"}";
+    let envelope = make_envelope("e-zstd", payload);
+    let compressed = zstd::encode_all(envelope.as_bytes(), 0).expect("zstd encode");
+
+    let resp = reqwest::Client::new()
+        .post(format!("http://{addr}/api/1/envelope/"))
+        .header("x-sentry-auth", "Sentry sentry_key=testpublickey")
+        .header("content-encoding", "zstd")
+        .body(compressed)
+        .send()
+        .await
+        .expect("send");
+    assert_eq!(resp.status().as_u16(), 200, "body: {:?}", resp.text().await);
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE project_id = 1")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn rejects_decompression_bomb_with_413() {
+    let (addr, pool) = spawn_app().await;
+    // 4 MiB of filler compresses to a few KB; decompressed it must trip the default
+    // CRASHBOX_MAX_ENVELOPE_BYTES (1 MiB) even though the wire body is tiny.
+    let payload = format!("{{\"message\":\"{}\"}}", "a".repeat(4 * 1024 * 1024));
+    let envelope = make_envelope("bomb", &payload);
+    let compressed = gzip(envelope.as_bytes());
+    assert!(compressed.len() < 100_000, "bomb must be small on the wire");
+
+    let resp = reqwest::Client::new()
+        .post(format!("http://{addr}/api/1/envelope/"))
+        .header("x-sentry-auth", "Sentry sentry_key=testpublickey")
+        .header("content-encoding", "gzip")
+        .body(compressed)
+        .send()
+        .await
+        .expect("send");
+    assert_eq!(resp.status().as_u16(), 413);
+    let body = resp.text().await.expect("body");
+    assert!(
+        body.contains("CRASHBOX_MAX_ENVELOPE_BYTES"),
+        "error names the limit: {body}"
+    );
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE project_id = 1")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(count, 0, "nothing stored from a rejected bomb");
+}
+
+#[tokio::test]
+async fn rejects_unsupported_content_encoding_with_400() {
+    let (addr, _pool) = spawn_app().await;
+    let envelope = make_envelope("e-br", "{\"message\":\"x\"}");
+
+    let resp = reqwest::Client::new()
+        .post(format!("http://{addr}/api/1/envelope/"))
+        .header("x-sentry-auth", "Sentry sentry_key=testpublickey")
+        .header("content-encoding", "br")
+        .body(envelope)
+        .send()
+        .await
+        .expect("send");
+    assert_eq!(resp.status().as_u16(), 400);
+    let body = resp.text().await.expect("body");
+    assert!(body.contains("br"), "error names the encoding: {body}");
+}
+
+#[tokio::test]
+async fn rejects_corrupt_gzip_body_with_400() {
+    let (addr, _pool) = spawn_app().await;
+    let resp = reqwest::Client::new()
+        .post(format!("http://{addr}/api/1/envelope/"))
+        .header("x-sentry-auth", "Sentry sentry_key=testpublickey")
+        .header("content-encoding", "gzip")
+        .body("not actually gzip".to_string())
+        .send()
+        .await
+        .expect("send");
+    assert_eq!(resp.status().as_u16(), 400);
+}

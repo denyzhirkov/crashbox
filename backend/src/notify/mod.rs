@@ -45,6 +45,12 @@ pub enum HeartbeatKind {
     HeartbeatRecovered,
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DigestKind {
+    Digest,
+}
+
 /// One message through the pipeline. `untagged` keeps the wire format of issue notifications
 /// byte-identical to what it was before heartbeats existed — each variant carries its own
 /// `kind` field, and the generic webhook consumer discriminates on that, not on an outer tag.
@@ -53,6 +59,7 @@ pub enum HeartbeatKind {
 pub enum Notification {
     Issue(IssueNotification),
     Heartbeat(HeartbeatNotification),
+    Digest(DigestNotification),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -91,12 +98,37 @@ pub struct HeartbeatNotification {
     pub link: String,
 }
 
+/// Periodic per-project summary fired by the digest job. Only sent when the window saw
+/// activity — an empty digest is noise.
+#[derive(Debug, Clone, Serialize)]
+pub struct DigestNotification {
+    pub kind: DigestKind,
+    pub project_name: String,
+    pub project_slug: String,
+    /// Actual covered window (anchor → now), which can exceed the configured cadence after
+    /// downtime.
+    pub window_hours: i64,
+    pub new_issues: i64,
+    pub events: i64,
+    /// Busiest issues of the window, largest first (bounded).
+    pub top_issues: Vec<DigestTopIssue>,
+    pub link: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DigestTopIssue {
+    pub issue_id: i64,
+    pub title: String,
+    pub events: i64,
+}
+
 impl Notification {
     /// Compact human-friendly subject line, used by Telegram/Discord text bodies.
     pub fn subject(&self) -> String {
         match self {
             Self::Issue(n) => n.subject(),
             Self::Heartbeat(n) => n.subject(),
+            Self::Digest(n) => n.subject(),
         }
     }
 
@@ -104,6 +136,7 @@ impl Notification {
         match self {
             Self::Issue(n) => &n.link,
             Self::Heartbeat(n) => &n.link,
+            Self::Digest(n) => &n.link,
         }
     }
 }
@@ -149,6 +182,20 @@ impl HeartbeatNotification {
                 )
             }
         }
+    }
+}
+
+impl DigestNotification {
+    pub fn subject(&self) -> String {
+        format!(
+            "[{}] 🗞 digest: {} new issue{}, {} event{} in {}h",
+            self.project_slug,
+            self.new_issues,
+            if self.new_issues == 1 { "" } else { "s" },
+            self.events,
+            if self.events == 1 { "" } else { "s" },
+            self.window_hours,
+        )
     }
 }
 
@@ -231,6 +278,11 @@ impl NotifyHub {
     pub fn build_heartbeat_link(&self, project_id: i64) -> String {
         let base = self.public_url.trim_end_matches('/');
         format!("{base}/projects/{project_id}/heartbeats")
+    }
+
+    pub fn build_project_link(&self, project_id: i64) -> String {
+        let base = self.public_url.trim_end_matches('/');
+        format!("{base}/projects/{project_id}/issues")
     }
 
     /// Fire-and-forget. Spawns tasks for each notifier; returns immediately. Drops the

@@ -79,7 +79,7 @@ Full reference: [`docs/configuration.md`](https://github.com/denyzhirkov/crashbo
 - **Web UI**: Login → Projects → Issues list (with filters, search, tag click-to-filter, saved views) → Issue detail (stack trace + breadcrumbs + tags + user + request + raw JSON). Warm-dark theme. **Cmd+K** command palette anywhere. 24h sparkline per issue.
 - **Issue management**: resolve / reopen / snooze (1h / 1d / 1w / until-next-crash) / auto-resolve / auto-reopen
 - **Alerts**: webhooks for new issue / re-open / **spike detection** (rate jumps 5× over 24h baseline) — Telegram, Discord, or any URL
-- **Operations**: built-in CLI (`docker exec crashbox crashbox projects list`, `issues resolve <id>`, `backup /data/snap.db`), Prometheus `/metrics`, atomic SQLite backups via `VACUUM INTO`
+- **Operations**: built-in CLI (`docker exec crashbox crashbox projects list`, `issues resolve <id>`, `backup /data/snap.db`), Prometheus `/metrics`, atomic SQLite backups via `VACUUM INTO` — also over HTTP: `curl -H "Authorization: Bearer cbx_…" -o snap.db https://crash.example.com/api/admin/backup`
 - **Single container**: 40 MB distroless image, non-root, statically-linked SQLite, no shell
 
 ---

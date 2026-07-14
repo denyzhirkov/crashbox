@@ -1,8 +1,8 @@
 use sqlx::SqlitePool;
 use ulid::Ulid;
 
-use crate::config::{AdminBootstrap, Config, ProjectBootstrap};
-use crate::db::{projects, users};
+use crate::config::{AdminBootstrap, Config, HeartbeatMonitorSpec, ProjectBootstrap};
+use crate::db::{heartbeats, projects, users};
 use crate::security::password;
 use crate::sentry::dsn::{mask_public_key, Dsn};
 
@@ -18,6 +18,104 @@ pub async fn run(pool: &SqlitePool, cfg: &Config) -> anyhow::Result<()> {
             dsn = %full,
             "bootstrap: project DSN (shown once at startup)"
         );
+    }
+    bootstrap_heartbeat_monitors(pool, &cfg.heartbeat.monitors).await?;
+    Ok(())
+}
+
+/// Apply `CRASHBOX_HEARTBEAT_MONITORS` idempotently. `name` is the identity within the
+/// default project (lowest id — env provisioning targets single-project deployments).
+/// For declared monitors the env is the source of truth: `ping_key` and `period_seconds`
+/// always converge to the declared values; `grace_seconds` / `description` only when
+/// declared. Monitors not listed in the env are never touched or deleted, and status /
+/// transition history is never altered.
+async fn bootstrap_heartbeat_monitors(
+    pool: &SqlitePool,
+    specs: &[HeartbeatMonitorSpec],
+) -> anyhow::Result<()> {
+    if specs.is_empty() {
+        return Ok(());
+    }
+    let project_id: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM projects ORDER BY id ASC LIMIT 1")
+            .fetch_optional(pool)
+            .await?;
+    let Some(project_id) = project_id else {
+        tracing::warn!(
+            "bootstrap: CRASHBOX_HEARTBEAT_MONITORS is set but no project exists; skipping"
+        );
+        return Ok(());
+    };
+
+    for spec in specs {
+        // A ping key already attached to a *different* monitor is a config error: keys are
+        // both identity and the sole authentication, so silently stealing one would break
+        // whatever currently pings it.
+        if let Some(owner) = heartbeats::find_by_ping_key(pool, &spec.ping_key).await? {
+            if owner.project_id != project_id || owner.name != spec.name {
+                anyhow::bail!(
+                    "bootstrap: ping_key declared for monitor {:?} is already used by monitor {:?}",
+                    spec.name,
+                    owner.name
+                );
+            }
+        }
+
+        let grace = spec
+            .grace_seconds
+            .unwrap_or(heartbeats::GRACE_DEFAULT_SECONDS);
+        match heartbeats::find_by_name(pool, project_id, &spec.name).await? {
+            None => {
+                let id = heartbeats::insert(
+                    pool,
+                    project_id,
+                    &spec.name,
+                    spec.description.as_deref(),
+                    &spec.ping_key,
+                    spec.period_seconds,
+                    grace,
+                )
+                .await?;
+                tracing::info!(
+                    monitor_id = id,
+                    name = %spec.name,
+                    "bootstrap: heartbeat monitor created from env"
+                );
+            }
+            Some(existing) => {
+                if existing.ping_key != spec.ping_key {
+                    heartbeats::set_ping_key(pool, existing.id, &spec.ping_key).await?;
+                    tracing::info!(
+                        monitor_id = existing.id,
+                        name = %spec.name,
+                        "bootstrap: heartbeat monitor ping_key updated from env"
+                    );
+                }
+                let period_drifted = existing.period_seconds != spec.period_seconds;
+                let grace_drifted = spec.grace_seconds.is_some() && existing.grace_seconds != grace;
+                let description_drifted = spec.description.is_some()
+                    && existing.description.as_deref() != spec.description.as_deref();
+                if period_drifted || grace_drifted || description_drifted {
+                    heartbeats::update(
+                        pool,
+                        existing.id,
+                        None,
+                        spec.description
+                            .as_deref()
+                            .map(Some)
+                            .filter(|_| description_drifted),
+                        Some(spec.period_seconds).filter(|_| period_drifted),
+                        Some(grace).filter(|_| grace_drifted),
+                    )
+                    .await?;
+                    tracing::info!(
+                        monitor_id = existing.id,
+                        name = %spec.name,
+                        "bootstrap: heartbeat monitor settings converged to env"
+                    );
+                }
+            }
+        }
     }
     Ok(())
 }

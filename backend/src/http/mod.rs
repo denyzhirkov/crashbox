@@ -1,5 +1,7 @@
 pub mod assets;
 pub mod auth;
+pub mod backup;
+pub mod decompress;
 pub mod dsn_auth;
 pub mod error;
 pub mod health;

@@ -35,6 +35,17 @@ pub struct Config {
     pub notify: NotifyConfig,
     pub livelog: LiveLogConfig,
     pub heartbeat: HeartbeatConfig,
+    pub digest: DigestConfig,
+}
+
+/// Periodic per-project summary (new issues / events since the last digest) through the
+/// existing notification channels. Off by default — it's a pull into your chat, opt in.
+#[derive(Debug, Clone)]
+pub struct DigestConfig {
+    pub enabled: bool,
+    /// Window and cadence in hours. The anchor persists in `app_meta`, so restarts neither
+    /// double-send nor reset the window.
+    pub interval_hours: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +150,23 @@ pub struct HeartbeatConfig {
     /// Per-monitor cap on accepted pings. Duplicate pings are cheap, but a runaway loop
     /// shouldn't be allowed to hammer the DB.
     pub max_pings_per_minute: u32,
+    /// Declaratively-provisioned monitors from `CRASHBOX_HEARTBEAT_MONITORS` (JSON array),
+    /// applied idempotently at startup — see `bootstrap`.
+    pub monitors: Vec<HeartbeatMonitorSpec>,
+}
+
+/// One monitor from `CRASHBOX_HEARTBEAT_MONITORS`. The operator supplies a fixed `ping_key`
+/// so ping URLs survive container recreation.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeartbeatMonitorSpec {
+    pub name: String,
+    pub ping_key: String,
+    pub period_seconds: i64,
+    #[serde(default)]
+    pub grace_seconds: Option<i64>,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 impl Config {
@@ -235,7 +263,9 @@ impl Config {
                     "30",
                 )?,
                 max_pings_per_minute: parse_env("CRASHBOX_HEARTBEAT_MAX_PINGS_PER_MINUTE", "120")?,
+                monitors: parse_heartbeat_monitors()?,
             },
+            digest: parse_digest()?,
         })
     }
 
@@ -250,6 +280,92 @@ fn env_opt(key: &'static str) -> Option<String> {
 
 fn env_or(key: &'static str, default: &str) -> String {
     env_opt(key).unwrap_or_else(|| default.to_string())
+}
+
+fn parse_digest() -> Result<DigestConfig, ConfigError> {
+    let cfg = DigestConfig {
+        enabled: parse_env("CRASHBOX_DIGEST_ENABLED", "false")?,
+        interval_hours: parse_env("CRASHBOX_DIGEST_INTERVAL_HOURS", "24")?,
+    };
+    if cfg.enabled && cfg.interval_hours == 0 {
+        return Err(ConfigError::Invalid {
+            var: "CRASHBOX_DIGEST_INTERVAL_HOURS",
+            source: anyhow::anyhow!("must be at least 1 when the digest is enabled"),
+        });
+    }
+    Ok(cfg)
+}
+
+/// Parse and validate `CRASHBOX_HEARTBEAT_MONITORS` (JSON array of monitor specs). Any
+/// malformed entry fails startup loud — a silently-skipped monitor is a dead-man's switch
+/// that never arms. Bounds are shared with the HTTP layer via `db::heartbeats`.
+fn parse_heartbeat_monitors() -> Result<Vec<HeartbeatMonitorSpec>, ConfigError> {
+    use crate::db::heartbeats as hb;
+    const VAR: &str = "CRASHBOX_HEARTBEAT_MONITORS";
+    let Some(raw) = env_opt(VAR) else {
+        return Ok(Vec::new());
+    };
+    let invalid = |msg: String| ConfigError::Invalid {
+        var: VAR,
+        source: anyhow::anyhow!(msg),
+    };
+    let specs: Vec<HeartbeatMonitorSpec> =
+        serde_json::from_str(&raw).map_err(|e| ConfigError::Invalid {
+            var: VAR,
+            source: anyhow::Error::new(e),
+        })?;
+
+    let mut names = std::collections::HashSet::new();
+    let mut keys = std::collections::HashSet::new();
+    for s in &specs {
+        let name = s.name.as_str();
+        if name.trim().is_empty() || name.chars().count() > hb::NAME_MAX_CHARS {
+            return Err(invalid(format!(
+                "monitor name must be 1..={} non-blank characters",
+                hb::NAME_MAX_CHARS
+            )));
+        }
+        if !names.insert(name.to_string()) {
+            return Err(invalid(format!("duplicate monitor name {name:?}")));
+        }
+        let key_ok = (16..=128).contains(&s.ping_key.len())
+            && s.ping_key
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        if !key_ok {
+            return Err(invalid(format!(
+                "ping_key for {name:?} must be 16..=128 characters of [A-Za-z0-9_-] — \
+                 it is the only authentication on the ping URL, treat it like a secret"
+            )));
+        }
+        if !keys.insert(s.ping_key.clone()) {
+            return Err(invalid(format!("duplicate ping_key on monitor {name:?}")));
+        }
+        if !(hb::PERIOD_MIN_SECONDS..=hb::PERIOD_MAX_SECONDS).contains(&s.period_seconds) {
+            return Err(invalid(format!(
+                "period_seconds for {name:?} must be between {} and {}",
+                hb::PERIOD_MIN_SECONDS,
+                hb::PERIOD_MAX_SECONDS
+            )));
+        }
+        if let Some(g) = s.grace_seconds {
+            if !(0..=hb::GRACE_MAX_SECONDS).contains(&g) {
+                return Err(invalid(format!(
+                    "grace_seconds for {name:?} must be between 0 and {}",
+                    hb::GRACE_MAX_SECONDS
+                )));
+            }
+        }
+        if let Some(d) = &s.description {
+            if d.chars().count() > hb::DESCRIPTION_MAX_CHARS {
+                return Err(invalid(format!(
+                    "description for {name:?} must be at most {} characters",
+                    hb::DESCRIPTION_MAX_CHARS
+                )));
+            }
+        }
+    }
+    Ok(specs)
 }
 
 fn parse_env<T>(key: &'static str, default: &str) -> Result<T, ConfigError>

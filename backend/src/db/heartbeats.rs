@@ -18,6 +18,14 @@ pub const STATUS_UP: &str = "up";
 pub const STATUS_DOWN: &str = "down";
 pub const STATUS_PAUSED: &str = "paused";
 
+// Validation bounds, shared by the HTTP layer and the env-bootstrap path so they can't drift.
+pub const PERIOD_MIN_SECONDS: i64 = 10;
+pub const PERIOD_MAX_SECONDS: i64 = 30 * 24 * 3600;
+pub const GRACE_MAX_SECONDS: i64 = 24 * 3600;
+pub const GRACE_DEFAULT_SECONDS: i64 = 60;
+pub const NAME_MAX_CHARS: usize = 200;
+pub const DESCRIPTION_MAX_CHARS: usize = 500;
+
 const COLUMNS: &str = "id, project_id, name, description, ping_key, period_seconds, \
                        grace_seconds, status, last_ping_at, last_transition_at, \
                        created_at, updated_at";
@@ -124,6 +132,35 @@ pub async fn find_by_id(pool: &SqlitePool, id: i64) -> sqlx::Result<Option<Heart
     .bind(id)
     .fetch_optional(pool)
     .await
+}
+
+/// Exact-name lookup within a project — the identity used by declarative env provisioning.
+pub async fn find_by_name(
+    pool: &SqlitePool,
+    project_id: i64,
+    name: &str,
+) -> sqlx::Result<Option<HeartbeatMonitor>> {
+    sqlx::query_as(&format!(
+        "SELECT {COLUMNS} FROM heartbeat_monitors WHERE project_id = ? AND name = ?"
+    ))
+    .bind(project_id)
+    .bind(name)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Replace the ping key (env provisioning declares fixed keys; rotation happens by declaring
+/// a new one). Does not touch status or transition history.
+pub async fn set_ping_key(pool: &SqlitePool, id: i64, ping_key: &str) -> sqlx::Result<u64> {
+    let now = Utc::now().to_rfc3339();
+    let result =
+        sqlx::query("UPDATE heartbeat_monitors SET ping_key = ?, updated_at = ? WHERE id = ?")
+            .bind(ping_key)
+            .bind(&now)
+            .bind(id)
+            .execute(pool)
+            .await?;
+    Ok(result.rows_affected())
 }
 
 pub async fn find_by_ping_key(
